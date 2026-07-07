@@ -208,7 +208,6 @@ def generar_etiquetas_chicas(products_list):
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 st.title("🎈 Cotyland - Panel Multiplataforma")
 
-# --- TRUCO CSS BLINDADO PARA DARLE COLOR A LOS BOTONES POR SU ID ---
 st.html("""
 <style>
     div[data-testid="stColumn"]:nth-of-type(1) button {
@@ -236,108 +235,120 @@ tab1, tab2 = st.tabs(["🖨️ Generador de Etiquetas", "📊 Comparador de Prec
 
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
+    st.caption("⚠️ Debe ser el archivo de exportación directa que contiene los precios actuales de las góndolas.")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
     
     if uploaded_file:
-        bytes_data = uploaded_file.getvalue()
-        content = bytes_data.decode("latin1")
-        reader = csv.reader(content.splitlines())
-        
-        parsed_products = []
-        for r in reader:
-            if not r: continue
-            r_ext = list(r) + [""] * (5 - len(r))
-            sku = r_ext[2].strip()
-            parsed_products.append({
-                "Imprimir": True,
-                "SKU": sku if sku else "S/C",
-                "Descripción": fix_encoding(r_ext[1].strip().strip('"')),
-                "Precio Crudo": r_ext[0].strip(),
-                "Fecha": r_ext[4].strip()
-            })
+        try:
+            bytes_data = uploaded_file.getvalue()
+            content = bytes_data.decode("latin1")
+            reader = csv.reader(content.splitlines())
             
-        df_products = pd.DataFrame(parsed_products)
-        
-        st.write("---")
-        st.subheader("2. Seleccioná un producto para PREVISUALIZAR o desmarcalo:")
-        
-        selected_row = st.selectbox(
-            "🔎 Elegí un producto para ver el boceto real en pantalla:",
-            options=range(len(df_products)),
-            format_func=lambda idx: f"{df_products.iloc[idx]['SKU']} - {df_products.iloc[idx]['Descripción']} ({format_price_arg(df_products.iloc[idx]['Precio Crudo'])})"
-        )
-        
-        p_view = df_products.iloc[selected_row]
-        p_txt = format_price_arg(p_view["Precio Crudo"])
-        d_txt = p_view["Descripción"]
-        s_txt = p_view["SKU"]
-        f_txt = p_view["Fecha"] if p_view["Fecha"] else date.today().strftime("%d/%m/%y")
-        
-        with st.container(border=True):
-            st.write("👁️ **VISTA PREVIA DEL CARTEL SELECCIONADO**")
-            st.subheader(d_txt)
-            st.metric(label="Precio Final (Grosor Máximo Auto-Ajustable)", value=p_txt)
-            st.text(f"Código: {s_txt}   |   Fecha: {f_txt}")
-
-        st.write("")
-        edited_df = st.data_editor(
-            df_products,
-            column_config={
-                "Imprimir": st.column_config.CheckboxColumn(help="Desmarcar para quitar del PDF", default=True),
-                "SKU": st.column_config.TextColumn(disabled=True),
-                "Descripción": st.column_config.TextColumn(disabled=True),
-                "Precio Crudo": st.column_config.TextColumn(disabled=True),
-                "Fecha": st.column_config.TextColumn(disabled=True),
-            },
-            disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"],
-            hide_index=True,
-            use_container_width=True
-        )
-        
-        df_filtrado = edited_df[edited_df["Imprimir"] == True]
-        lista_final = []
-        for _, row in df_filtrado.iterrows():
-            lista_final.append((row["SKU"], row["Descripción"], row["Precio Crudo"], row["Fecha"]))
+            parsed_products = []
+            for r in reader:
+                if not r: continue
+                # Validación estricta de estructura mínima
+                if len(r) < 3:
+                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas del sistema de precios (Faltan SKU, Descripción o Precio).")
+                
+                r_ext = list(r) + [""] * (5 - len(r))
+                sku = r_ext[2].strip()
+                parsed_products.append({
+                    "Imprimir": True,
+                    "SKU": sku if sku else "S/C",
+                    "Descripción": fix_encoding(r_ext[1].strip().strip('"')),
+                    "Precio Crudo": r_ext[0].strip(),
+                    "Fecha": r_ext[4].strip()
+                })
+                
+            if not parsed_products:
+                raise ValueError("El archivo CSV está completamente vacío o no tiene registros válidos.")
+                
+            df_products = pd.DataFrame(parsed_products)
             
-        st.write("---")
-        st.subheader("3. Descargar Formato de Impresión:")
-        
-        if len(lista_final) == 0:
-            st.warning("⚠️ No seleccionaste ningún producto para imprimir.")
-        else:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                with st.container(border=True):
-                    st.markdown("🔴 **Opción A**\n\nCarteles Gigantes\n*(Ofertas - 2 por A4)*")
-                    if st.button("Descargar PDF Gigante", use_container_width=True):
-                        pdf = generar_carteles_gigantes(lista_final)
-                        st.download_button("📥 Bajar Gigantes", data=pdf, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True)
+            st.success(f"✅ ¡Archivo de precios correcto! {len(df_products)} productos detectados.")
+            st.write("---")
+            st.subheader("2. Seleccioná un producto para PREVISUALIZAR o desmarcalo:")
+            
+            selected_row = st.selectbox(
+                "🔎 Elegí un producto para ver el boceto real en pantalla:",
+                options=range(len(df_products)),
+                format_func=lambda idx: f"{df_products.iloc[idx]['SKU']} - {df_products.iloc[idx]['Descripción']} ({format_price_arg(df_products.iloc[idx]['Precio Crudo'])})"
+            )
+            
+            p_view = df_products.iloc[selected_row]
+            p_txt = format_price_arg(p_view["Precio Crudo"])
+            d_txt = p_view["Descripción"]
+            s_txt = p_view["SKU"]
+            f_txt = p_view["Fecha"] if p_view["Fecha"] else date.today().strftime("%d/%m/%y")
+            
+            with st.container(border=True):
+                st.write("👁️ **VISTA PREVIA DEL CARTEL SELECCIONADO**")
+                st.subheader(d_txt)
+                st.metric(label="Precio Final (Grosor Máximo Auto-Ajustable)", value=p_txt)
+                st.text(f"Código: {s_txt}   |   Fecha: {f_txt}")
 
-            with col2:
-                with st.container(border=True):
-                    st.markdown("🔵 **Opción B**\n\nPrecios Medianos\n*(Góndola - 10x7 cm)*")
-                    if st.button("Descargar PDF Mediano", use_container_width=True):
-                        pdf = generar_precios_medianos(lista_final)
-                        st.download_button("📥 Bajar Medianos", data=pdf, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True)
+            st.write("")
+            edited_df = st.data_editor(
+                df_products,
+                column_config={
+                    "Imprimir": st.column_config.CheckboxColumn(help="Desmarcar para quitar del PDF", default=True),
+                    "SKU": st.column_config.TextColumn(disabled=True),
+                    "Descripción": st.column_config.TextColumn(disabled=True),
+                    "Precio Crudo": st.column_config.TextColumn(disabled=True),
+                    "Fecha": st.column_config.TextColumn(disabled=True),
+                },
+                disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"],
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            df_filtrado = edited_df[edited_df["Imprimir"] == True]
+            lista_final = []
+            for _, row in df_filtrado.iterrows():
+                lista_final.append((row["SKU"], row["Descripción"], row["Precio Crudo"], row["Fecha"]))
+                
+            st.write("---")
+            st.subheader("3. Descargar Formato de Impresión:")
+            
+            if len(lista_final) == 0:
+                st.warning("⚠️ No seleccionaste ningún producto para imprimir.")
+            else:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    with st.container(border=True):
+                        st.markdown("**Opción A**\n\nCarteles Gigantes\n*(Ofertas - 2 por A4)*")
+                        if st.button("Descargar PDF Gigante", use_container_width=True):
+                            pdf = generar_carteles_gigantes(lista_final)
+                            st.download_button("📥 Bajar Gigantes", data=pdf, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True)
 
-            with col3:
-                with st.container(border=True):
-                    st.markdown("🟢 **Opción C**\n\nEtiquetas Chicas\n*(Artículos - 7x3.5 cm)*")
-                    if st.button("Descargar PDF Chico", use_container_width=True):
-                        pdf = generar_etiquetas_chicas(lista_final)
-                        st.download_button("📥 Bajar Chicas", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
+                with col2:
+                    with st.container(border=True):
+                        st.markdown("**Opción B**\n\nPrecios Medianos\n*(Góndola - 10x7 cm)*")
+                        if st.button("Descargar PDF Mediano", use_container_width=True):
+                            pdf = generar_precios_medianos(lista_final)
+                            st.download_button("📥 Bajar Medianos", data=pdf, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True)
+
+                with col3:
+                    with st.container(border=True):
+                        st.markdown("**Opción C**\n\nEtiquetas Chicas\n*(Artículos - 7x3.5 cm)*")
+                        if st.button("Descargar PDF Chico", use_container_width=True):
+                            pdf = generar_etiquetas_chicas(lista_final)
+                            st.download_button("📥 Bajar Chicas", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
+        except Exception as e:
+            st.error(f"❌ ARCHIVO INCORRECTO: {e} Por favor, asegurate de exportar la lista de precios normal del sistema.")
 
 with tab2:
-    st.subheader("📊 Comparador de Cambios de Precios")
-    st.write("Subí las dos listas que descargaste del sistema para cruzar los datos automáticamente.")
+    st.subheader("📊 Comparar Cambios de Precios")
+    st.write("Subí las dos listas en formato CSV. El programa identificará de forma automática cuál es la vieja y cuál la nueva.")
     
     col_old, col_new = st.columns(2)
     with col_old:
-        file_old = st.file_uploader("1. Archivo Viejo (Anterior)", type=["csv"], key="v_up")
+        file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
     with col_new:
-        file_new = st.file_uploader("2. Archivo Nuevo (Actual)", type=["csv"], key="n_up")
+        file_b = st.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="file_b_up")
         
-    if file_old and file_new:
+    if file_a and file_b:
         if st.button("Cruzar Listas y Detectar Cambios", type="primary", use_container_width=True):
             try:
                 def normalizar_precio(valor):
@@ -346,24 +357,43 @@ with tab2:
                     try: return float(s)
                     except: return None
 
-                def cargar_df(p):
-                    df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
-                    return pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
+                def cargar_df_crudo(p):
+                    try:
+                        df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
+                        # Verificación estricta de las columnas exactas del reporte de stock (columna 9, 10 y 14 de Python)
+                        if df.shape[1] < 15:
+                            raise IndexError("El archivo no contiene la cantidad estructural de columnas requerida (se necesitan mínimo 15 columnas del reporte maestro).")
+                        df_res = pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
+                        df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
+                        return df_res
+                    except Exception:
+                        raise ValueError("Estructura incompatible. Este archivo no coincide con las columnas del listado maestro de stock.")
 
-                df_old, df_new = cargar_df(file_old), cargar_df(file_new)
-                df_old["Precio_num"] = df_old["Precio"].apply(normalizar_precio)
-                df_new["Precio_num"] = df_new["Precio"].apply(normalizar_precio)
+                df_a = cargar_df_crudo(file_a)
+                df_b = cargar_df_crudo(file_b)
 
-                merged = pd.merge(df_old[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_old"}),
-                                  df_new[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_new"}), on="SKU", how="inner")
+                mean_a = df_a["Precio_num"].mean()
+                mean_b = df_b["Precio_num"].mean()
+
+                if mean_b >= mean_a:
+                    df_old, df_new = df_a, df_b
+                    st.info("ℹ️ Sistema: Detectado de forma automática -> Lista A (Anterior) vs Lista B (Nueva).")
+                else:
+                    df_old, df_new = df_b, df_a
+                    st.info("ℹ️ Sistema: Detectado de forma automática -> Lista B (Anterior) vs Lista A (Nueva).")
+
+                old_p = df_old[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_old"})
+                new_p = df_new[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_new"})
+
+                merged = pd.merge(old_p, new_p, on="SKU", how="inner")
                 changed = merged[merged["Precio_old"] != merged["Precio_new"]]
 
                 if changed.empty:
                     st.info("No se detectaron variaciones de precio.")
                 else:
-                    df_final = pd.merge(changed[["SKU"]], df_new[["SKU", "Descripcion", "Precio"]], on="SKU", how="left").rename(columns={"Precio": "Precio_nuevo"})
-                    df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_anterior"}), on="SKU", how="left")
-                    df_final = df_final[["SKU", "Descripcion", "Precio_anterior", "Precio_nuevo"]].sort_values("SKU")
+                    df_final = pd.merge(changed[["SKU"]], df_new[["SKU", "Descripcion", "Precio"]], on="SKU", how="left").rename(columns={"Precio": "Precio_Nuevo"})
+                    df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_Anterior"}), on="SKU", how="left")
+                    df_final = df_final[["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"]].sort_values("SKU")
 
                     st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
                     st.dataframe(df_final, use_container_width=True)
@@ -375,4 +405,4 @@ with tab2:
                     
                     st.download_button("📥 Descargar Excel de Cambios (.xlsx)", data=excel_buffer, file_name="cambios_de_precios.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             except Exception as e:
-                st.error(f"Error procesando los CSV: {e}")
+                st.error(f"❌ ARCHIVO INCORRECTO: {e} Por favor, cargá únicamente archivos de exportación crudos del sistema.")
