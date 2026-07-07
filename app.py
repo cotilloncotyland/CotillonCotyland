@@ -186,6 +186,10 @@ st.title("🎈 Cotyland - Panel Multiplataforma")
 
 tab1, tab2 = st.tabs(["🖨️ Generador de Etiquetas", "📊 Comparador de Precios"])
 
+html_grande = "<div style='border:2px solid #333; padding:15px; border-radius:5px; text-align:center; background:#f9f9f9; max-width:300px; margin:auto;'><b style='font-size:14px; color:#555;'>DESCRIPCIÓN DEL PRODUCTO</b><br><br><span style='font-size:32px; font-weight:bold; color:#000;'>$ 1.250,00</span><br><br><span style='font-size:10px; color:#777;'>ART-1234  &nbsp;&nbsp;&nbsp;&nbsp;  07/07/2026</span></div>"
+html_mediano = "<div style='border:2px solid #333; padding:25px; border-radius:5px; text-align:center; background:#f9f9f9; max-width:300px; margin:auto;'><b style='font-size:16px; color:#555;'>PRODUCTO EN PROMO</b><br><span style='font-size:48px; font-weight:bold; color:#000;'>$ 4.500</span><br><span style='font-size:11px; color:#777;'>ART-5566 &nbsp;&nbsp; 07/07/2026</span></div>"
+html_chico = "<div style='border:1px solid #666; padding:8px; border-radius:3px; text-align:center; background:#f9f9f9; max-width:220px; margin:auto;'><b style='font-size:10px; color:#555;'>NOMBRE ARTÍCULO CORTO</b><br><span style='font-size:20px; font-weight:bold; color:#000;'>$ 450</span><br><span style='font-size:9px; color:#777;'>ART-999 - 07/07/26</span></div>"
+
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
@@ -206,17 +210,10 @@ with tab1:
         st.write("---")
         st.subheader("2. Elegí el tamaño que necesitás imprimir:")
 
-        # --- GUÍA VISUAL CON CAJAS ESTILIZADAS ---
         with st.container(border=True):
             st.markdown("### 🔲 Opción A: Carteles Grandes (10x7 cm)")
             st.caption("Especial para góndolas o exhibidores principales. Entran 8 por hoja A4 (2 columnas x 4 filas).")
-            st.markdown(
-                "<div style='border:2px solid #333; padding:15px; border-radius:5px; text-align:center; background:#f9f9f9; max-width:300px; margin:auto;'>"
-                "<b style='font-size:14px; color:#555;'>DESCRIPCIÓN DEL PRODUCTO</b><br><br>"
-                "<span style='font-size:32px; font-weight:bold; color:#000;'>$ 1.250,00</span><br><br>"
-                "<span style='font-size:10px; color:#777;'>ART-1234  &nbsp;&nbsp;&nbsp;&nbsp;  07/07/2026</span>"
-                "</div>", unsafe_html=True
-            )
+            st.markdown(html_grande, unsafe_html=True)
             st.write("")
             if st.button("Generar Carteles Grandes", use_container_width=True):
                 pdf = generar_carteles_grandes(rows_grandes)
@@ -225,13 +222,7 @@ with tab1:
         with st.container(border=True):
             st.markdown("### 🔲 Opción B: Precios Medianos (Mitad de A4)")
             st.caption("Carteles gigantes de oferta. Entran exactamente 2 por hoja vertical.")
-            st.markdown(
-                "<div style='border:2px solid #333; padding:25px; border-radius:5px; text-align:center; background:#f9f9f9; max-width:300px; margin:auto;'>"
-                "<b style='font-size:16px; color:#555;'>PRODUCTO EN PROMO</b><br>"
-                "<span style='font-size:48px; font-weight:bold; color:#000;'>$ 4.500</span><br>"
-                "<span style='font-size:11px; color:#777;'>ART-5566 &nbsp;&nbsp; 07/07/2026</span>"
-                "</div>", unsafe_html=True
-            )
+            st.markdown(html_mediano, unsafe_html=True)
             st.write("")
             if st.button("Generar Precios Medianos", use_container_width=True):
                 pdf = generar_precios_medianos(products_med_chico)
@@ -240,13 +231,7 @@ with tab1:
         with st.container(border=True):
             st.markdown("### 🔲 Opción C: Etiquetas Chicas (7x3.5 cm)")
             st.caption("Ideales para pegar directo en artículos chicos o estanterías compactas. Formato apaisado (A4 Horizontal).")
-            st.markdown(
-                "<div style='border:1px solid #666; padding:8px; border-radius:3px; text-align:center; background:#f9f9f9; max-width:220px; margin:auto;'>"
-                "<b style='font-size:10px; color:#555;'>NOMBRE ARTÍCULO CORTO</b><br>"
-                "<span style='font-size:20px; font-weight:bold; color:#000;'>$ 450</span><br>"
-                "<span style='font-size:9px; color:#777;'>ART-999 - 07/07/26</span>"
-                "</div>", unsafe_html=True
-            )
+            st.markdown(html_chico, unsafe_html=True)
             st.write("")
             if st.button("Generar Etiquetas Chicas", use_container_width=True):
                 pdf = generar_etiquetas_chicas(products_med_chico)
