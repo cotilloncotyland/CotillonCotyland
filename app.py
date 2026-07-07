@@ -237,32 +237,24 @@ with tab1:
         st.write("---")
         st.subheader("2. Seleccioná un producto para PREVISUALIZAR o desmarcalo:")
         
-        # Guardar selección en sesión de streamlit para el preview dinámico
         selected_row = st.selectbox(
             "🔎 Elegí un producto para ver el boceto real en pantalla:",
             options=range(len(df_products)),
             format_func=lambda idx: f"{df_products.iloc[idx]['SKU']} - {df_products.iloc[idx]['Descripción']} ({format_price_arg(df_products.iloc[idx]['Precio Crudo'])})"
         )
         
-        # Render interactivo de la previsualización inteligente
         p_view = df_products.iloc[selected_row]
         p_txt = format_price_arg(p_view["Precio Crudo"])
         d_txt = p_view["Descripción"]
         s_txt = p_view["SKU"]
         f_txt = p_view["Fecha"] if p_view["Fecha"] else date.today().strftime("%d/%m/%y")
         
-        # Caja dinámica simulando el cartel
+        # --- PREVISUALIZACIÓN NATIVA BLINDADA CONTRA ERRORES ---
         with st.container(border=True):
-            st.markdown("👁️ **PREVISUALIZACIÓN REAL EN PANTALLA**")
-            st.markdown(
-                f"<div style='border:3px solid #111; padding:20px; border-radius:4px; text-align:center; background:#ffffff; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); max-width:400px; margin:auto; color:#000000;'>"
-                f"<div style='font-size:16px; font-weight:bold; line-height:1.2; height:45px; overflow:hidden; display:flex; align-items:center; justify-content:center; color:#111;'>{d_txt}</div>"
-                f"<div style='font-size:42px; font-weight:900; margin:15px 0; color:#000000; letter-spacing:-1px;'>{p_txt}</div>"
-                f"<div style='font-size:12px; font-weight:600; color:#555;'>{s_txt} &nbsp;&nbsp;&nbsp;&nbsp; {f_txt}</div>"
-                f"</div>", 
-                unsafe_html=True
-            )
-            st.caption("💡 *El precio y el texto se auto-ajustan solos en el PDF final si detectan que exceden el ancho físico.*")
+            st.write("👁️ **VISTA PREVIA DEL CARTEL SELECCIONADO**")
+            st.subheader(d_txt)
+            st.metric(label="Precio Final", value=p_txt)
+            st.text(f"Código: {s_txt}   |   Fecha: {f_txt}")
 
         st.write("")
         edited_df = st.data_editor(
