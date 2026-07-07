@@ -9,17 +9,28 @@ from reportlab.lib.units import cm, mm
 from reportlab.pdfbase import pdfmetrics
 
 # =========================================================================
-# FUNCIONES AUXILIARES DE COMENTARIOS Y CORRECCIONES DE FORMATO
+# FUNCIONES AUXILIARES UNIFICADAS (Adiós caracteres raros y desbordes)
 # =========================================================================
 def fix_encoding(text: str) -> str:
     if text is None: return ""
     text = str(text)
-    try: return text.encode("latin1").decode("utf-8")
-    except Exception: return text
+    # Corrección de eñes y tildes comunes de sistemas retail
+    replacements = {
+        "Ã\x91": "Ñ", "Ã±": "ñ", "Ã\x81": "Á", "Ã\x89": "É", 
+        "Ã\x8d": "Í", "Ã\x93": "Ó", "Ã\x9a": "Ú", "Ã¡": "á", 
+        "Ã©": "é", "Ã­": "í", "Ã³": "ó", "Ãº": "ú",
+        "NÅ°": "N°", "NÂ°": "N°", "NÂ": "N°", "N° ": "N°"
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    try:
+        return text.encode("latin1").decode("utf-8")
+    except Exception:
+        return text
 
 def format_price_arg(price_str: str) -> str:
     if not price_str: return ""
-    s = price_str.replace("$", "").replace(" ", "")
+    s = str(price_str).replace("$", "").replace(" ", "")
     try: value = float(s)
     except ValueError: return price_str.strip()
     us = f"{value:,.2f}"
@@ -41,7 +52,7 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# LÓGICA DE MOTOR PDF (ReportLab en Memoria)
+# MOTOR PDF REVISADO (Sin saltos de línea huérfanos)
 # =========================================================================
 def generar_carteles_grandes(data_rows):
     buffer = io.BytesIO()
@@ -51,7 +62,7 @@ def generar_carteles_grandes(data_rows):
     margin_x, margin_y = (page_width - (2 * lbl_w)) / 2.0, (page_height - (4 * lbl_h)) / 2.0
 
     col, row = 0, 0
-    for price, desc, code, date_str in data_rows:
+    for sku, name, price, date_str in data_rows:
         x = margin_x + col * lbl_w
         y = page_height - margin_y - (row + 1) * lbl_h
         c.setLineWidth(1)
@@ -60,8 +71,7 @@ def generar_carteles_grandes(data_rows):
         inner_w = lbl_w - 0.6*cm
         desc_top = y + lbl_h - 0.3*cm
         
-        # Descripcion
-        desc_text = fix_encoding(desc).strip()
+        desc_text = fix_encoding(name).strip()
         if desc_text:
             f_size = 18
             while f_size >= 7:
@@ -74,7 +84,6 @@ def generar_carteles_grandes(data_rows):
                 c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
                 curr_y -= f_size * 1.15
 
-        # Precio
         price_text = format_price_arg(price).strip()
         if price_text:
             f_size = min(90, (lbl_h * 0.5))
@@ -84,8 +93,7 @@ def generar_carteles_grandes(data_rows):
             c.setFont("Helvetica-Bold", f_size)
             c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 1.2*cm, price_text)
 
-        # Footer
-        footer = f"{str(code).strip()}   {str(date_str).strip()}"
+        footer = f"{str(sku).strip()}   {str(date_str).strip()}"
         c.setFont("Helvetica", 10)
         c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 0.4*cm, footer)
 
@@ -100,20 +108,23 @@ def generar_precios_medianos(products_list):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     lbl_w, lbl_h = A4[0] - 10*mm, (A4[1] - 15*mm) / 2
-    for i, (sku, name, price) in enumerate(products_list):
+    label_date = date.today().strftime("%d/%m/%Y")
+
+    for i, (sku, name, price, date_str) in enumerate(products_list):
         pos = i % 2
         if i != 0 and pos == 0: c.showPage()
         x, y = 5*mm, ((A4[1] - 5*mm - lbl_h) if pos == 0 else 5*mm)
         c.rect(x, y, lbl_w, lbl_h)
         
-        price_txt = f"$ {price}"
+        price_txt = format_price_arg(price).strip()
         f_size = 110
         while c.stringWidth(price_txt, "Helvetica-Bold", f_size) > (lbl_w - 20) and f_size > 20: f_size -= 5
         c.setFont("Helvetica-Bold", f_size)
         c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/2 + 5, price_txt)
 
         c.setFont("Helvetica-Bold", 22)
-        words = name.split()
+        desc_clean = fix_encoding(name).strip()
+        words = desc_clean.split()
         lines, curr = [], ""
         for w in words:
             test = w if not curr else curr + " " + w
@@ -128,8 +139,10 @@ def generar_precios_medianos(products_list):
         for line in lines:
             c.drawCentredString(x + lbl_w/2, ny, line)
             ny -= 27
+            
+        final_date = date_str if date_str else label_date
         c.setFont("Helvetica-Bold", 12)
-        c.drawCentredString(x + lbl_w/2, y + 14, f"{sku}  {date.today().strftime('%d/%m/%Y')}")
+        c.drawCentredString(x + lbl_w/2, y + 14, f"{sku}  {final_date}")
     c.save()
     buffer.seek(0)
     return buffer
@@ -138,11 +151,13 @@ def generar_etiquetas_chicas(products_list):
     buffer = io.BytesIO()
     w_page, h_page = landscape(A4)
     c = canvas.Canvas(buffer, pagesize=(w_page, h_page))
+    label_date = date.today().strftime("%d/%m/%y")
+
     lbl_w, lbl_h = 70*mm, 35*mm
     cols, rows = int((w_page - 10*mm + 2*mm) // (lbl_w + 2*mm)), int((h_page - 10*mm + 2*mm) // (lbl_h + 2*mm))
     per_page = cols * rows
 
-    for i, (sku, name, price) in enumerate(products_list):
+    for i, (sku, name, price, date_str) in enumerate(products_list):
         if i > 0 and i % per_page == 0: c.showPage()
         pos = i % per_page
         r, col = pos // cols, pos % cols
@@ -151,12 +166,18 @@ def generar_etiquetas_chicas(products_list):
 
         c.setLineWidth(0.5)
         c.rect(x, y, lbl_w, lbl_h)
+        
         c.setFont("Helvetica-Bold", 30)
-        price_txt = f"$ {price}"
-        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", 30))/2, y + (lbl_h * 0.25), price_txt)
+        price_txt = format_price_arg(price).strip()
+        # Escalar precio chico si es muy largo
+        f_size_p = 30
+        while c.stringWidth(price_txt, "Helvetica-Bold", f_size_p) > (lbl_w - 4*mm) and f_size_p > 14: f_size_p -= 2
+        c.setFont("Helvetica-Bold", f_size_p)
+        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.25), price_txt)
 
         c.setFont("Helvetica-Bold", 9)
-        words = name.split()
+        desc_clean = fix_encoding(name).strip()
+        words = desc_clean.split()
         lines, curr = [], ""
         for w in words:
             test = w if not curr else curr + " " + w
@@ -169,17 +190,19 @@ def generar_etiquetas_chicas(products_list):
 
         ny = y + lbl_h - 5*mm
         for line in lines:
-            if ny < (y + (lbl_h * 0.25) + 22): break
+            if ny < (y + (lbl_h * 0.25) + 18): break
             c.drawCentredString(x + lbl_w/2, ny, line)
             ny -= 11
+            
+        final_date = date_str if date_str else label_date
         c.setFont("Helvetica", 8)
-        c.drawCentredString(x + lbl_w/2, y + 2*mm, f"{sku} - {date.today().strftime('%d/%m/%y')}")
+        c.drawCentredString(x + lbl_w/2, y + 2*mm, f"{sku} - {final_date}")
     c.save()
     buffer.seek(0)
     return buffer
 
 # =========================================================================
-# INTERFAZ WEB APLICACIÓN
+# INTERFAZ DE USUARIO (Con selector interactivo de productos)
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 st.title("🎈 Cotyland - Panel Multiplataforma")
@@ -195,43 +218,80 @@ with tab1:
         content = bytes_data.decode("latin1")
         reader = csv.reader(content.splitlines())
         
-        rows_grandes, products_med_chico = [], []
+        parsed_products = []
         for r in reader:
             if not r: continue
             r_ext = list(r) + [""] * (5 - len(r))
-            rows_grandes.append((r_ext[0], r_ext[1], r_ext[2], r_ext[4]))
-            products_med_chico.append((r_ext[2].strip(), r_ext[1].strip().strip('"'), r_ext[0].strip().replace("$","").strip().replace(".",",")))
+            sku = r_ext[2].strip()
+            # Guardamos crudo para procesar en la descarga
+            parsed_products.append({
+                "Imprimir": True,
+                "SKU": sku if sku else "S/C",
+                "Descripción": fix_encoding(r_ext[1].strip().strip('"')),
+                "Precio Crudo": r_ext[0].strip(),
+                "Fecha": r_ext[4].strip()
+            })
+            
+        df_products = pd.DataFrame(parsed_products)
         
-        st.success(f"CSV cargado correctamente ({len(rows_grandes)} productos).")
         st.write("---")
-        st.subheader("2. Elegí el tamaño que necesitás imprimir:")
+        st.subheader("2. Revisá y desmarcá lo que NO quieras imprimir:")
+        st.caption("Podés destildar la casilla de cualquier producto que esté mal o que quieras excluir.")
+        
+        # Tabla interactiva nativa de Streamlit para editar filas
+        edited_df = st.data_editor(
+            df_products,
+            column_config={
+                "Imprimir": st.column_config.CheckboxColumn(help="Desmarcar para quitar del PDF", default=True),
+                "SKU": st.column_config.TextColumn(disabled=True),
+                "Descripción": st.column_config.TextColumn(disabled=True),
+                "Precio Crudo": st.column_config.TextColumn(disabled=True),
+                "Fecha": st.column_config.TextColumn(disabled=True),
+            },
+            disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"],
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        # Filtrar las filas que el usuario dejó activas
+        df_filtrado = edited_df[edited_df["Imprimir"] == True]
+        
+        # Transformar al formato de las funciones
+        lista_final = []
+        for _, row in df_filtrado.iterrows():
+            lista_final.append((row["SKU"], row["Descripción"], row["Precio Crudo"], row["Fecha"]))
+            
+        st.write("---")
+        st.subheader("3. Elegí el tamaño para descargar:")
+        
+        if len(lista_final) == 0:
+            st.warning("⚠️ No seleccionaste ningún producto para imprimir.")
+        else:
+            st.info(f"Se van a generar etiquetas para {len(lista_final)} productos.")
+            
+            with st.container(border=True):
+                st.markdown("### 🔲 Opción A: Carteles Grandes (10x7 cm)")
+                st.caption("Especial para góndolas principales. Entran 8 por hoja A4.")
+                st.code("📝 FORMATO:\n[ DESCRIPCIÓN PRODUCTO FINITA ]\n         $ 1.250,00\nART-1234      07/07/2026", language="text")
+                if st.button("Generar Carteles Grandes", use_container_width=True):
+                    pdf = generar_carteles_grandes(lista_final)
+                    st.download_button("📥 Descargar PDF Grande", data=pdf, file_name="carteles_grandes_10x7.pdf", mime="application/pdf", use_container_width=True)
 
-        with st.container(border=True):
-            st.markdown("### 🔲 Opción A: Carteles Grandes (10x7 cm)")
-            st.caption("Especial para góndolas o exhibidores principales. Entran 8 por hoja A4 (2 columnas x 4 filas).")
-            st.code("📝 MUESTRA:\n[ DESCRIPCIÓN DEL PRODUCTO ]\n         $ 1.250,00\nART-1234      07/07/2026", language="text")
-            st.write("")
-            if st.button("Generar Carteles Grandes", use_container_width=True):
-                pdf = generar_carteles_grandes(rows_grandes)
-                st.download_button("📥 Descargar PDF Grande", data=pdf, file_name="carteles_grandes_10x7.pdf", mime="application/pdf", use_container_width=True)
+            with st.container(border=True):
+                st.markdown("### 🔲 Opción B: Precios Medianos (Mitad de A4)")
+                st.caption("Carteles gigantes de oferta. Entran 2 por hoja vertical.")
+                st.code("📝 FORMATO:\n[ PRODUCTO EN PROMO ]\n         $ 4.500\nART-5566      07/07/2026", language="text")
+                if st.button("Generar Precios Medianos", use_container_width=True):
+                    pdf = generar_precios_medianos(lista_final)
+                    st.download_button("📥 Descargar PDF Mediano", data=pdf, file_name="precios_medianos_a4.pdf", mime="application/pdf", use_container_width=True)
 
-        with st.container(border=True):
-            st.markdown("### 🔲 Opción B: Precios Medianos (Mitad de A4)")
-            st.caption("Carteles gigantes de oferta. Entran exactamente 2 por hoja vertical.")
-            st.code("📝 MUESTRA:\n[ PRODUCTO EN PROMO ]\n         $ 4.500\nART-5566      07/07/2026", language="text")
-            st.write("")
-            if st.button("Generar Precios Medianos", use_container_width=True):
-                pdf = generar_precios_medianos(products_med_chico)
-                st.download_button("📥 Descargar PDF Mediano", data=pdf, file_name="precios_medianos_a4.pdf", mime="application/pdf", use_container_width=True)
-
-        with st.container(border=True):
-            st.markdown("### 🔲 Opción C: Etiquetas Chicas (7x3.5 cm)")
-            st.caption("Ideales para pegar directo en artículos chicos o estanterías compactas. Formato apaisado (A4 Horizontal).")
-            st.code("📝 MUESTRA:\n[ NOMBRE ARTÍCULO ]\n         $ 450\nART-999 - 07/07/26", language="text")
-            st.write("")
-            if st.button("Generar Etiquetas Chicas", use_container_width=True):
-                pdf = generar_etiquetas_chicas(products_med_chico)
-                st.download_button("📥 Descargar PDF Chico", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
+            with st.container(border=True):
+                st.markdown("### 🔲 Opción C: Etiquetas Chicas (7x3.5 cm)")
+                st.caption("Para artículos chicos o estanterías compactas. A4 Horizontal.")
+                st.code("📝 FORMATO:\n[ NOMBRE ARTÍCULO ]\n         $ 450\nART-999 - 07/07/26", language="text")
+                if st.button("Generar Etiquetas Chicas", use_container_width=True):
+                    pdf = generar_etiquetas_chicas(lista_final)
+                    st.download_button("📥 Descargar PDF Chico", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
 
 with tab2:
     st.subheader("📊 Comparar Cambios de Precios")
