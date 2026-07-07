@@ -51,9 +51,9 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# MOTOR PDF REVISADO (Cálculo inteligente de fuentes)
+# MOTOR PDF OPTIMIZADO
 # =========================================================================
-def generar_carteles_grandes(data_rows):
+def generar_precios_medianos(data_rows):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
@@ -75,7 +75,7 @@ def generar_carteles_grandes(data_rows):
             f_size = 18
             while f_size >= 7:
                 lines = wrap_text_to_width(desc_text, "Helvetica-Bold", f_size, inner_w)
-                if len(lines) * f_size * 1.15 <= (lbl_h * 0.38): break
+                if len(lines) * f_size * 1.15 <= (lbl_h * 0.35): break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
             curr_y = desc_top - f_size
@@ -85,16 +85,16 @@ def generar_carteles_grandes(data_rows):
 
         price_text = format_price_arg(price).strip()
         if price_text:
-            f_size = min(90, (lbl_h * 0.5))
+            f_size = 95
             while f_size > 14:
                 if pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size) <= inner_w: break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 1.2*cm, price_text)
+            c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 1.1*cm, price_text)
 
         footer = f"{str(sku).strip()}   {str(date_str).strip()}"
         c.setFont("Helvetica", 10)
-        c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 0.4*cm, footer)
+        c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 0.3*cm, footer)
 
         col += 1
         if col >= 2: col, row = 0, row + 1
@@ -103,7 +103,7 @@ def generar_carteles_grandes(data_rows):
     buffer.seek(0)
     return buffer
 
-def generar_precios_medianos(products_list):
+def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     lbl_w, lbl_h = A4[0] - 10*mm, (A4[1] - 15*mm) / 2
@@ -116,20 +116,20 @@ def generar_precios_medianos(products_list):
         c.rect(x, y, lbl_w, lbl_h)
         
         price_txt = format_price_arg(price).strip()
-        f_size = 110
+        f_size = 125
         while f_size > 20:
             if c.stringWidth(price_txt, "Helvetica-Bold", f_size) <= (lbl_w - 20): break
             f_size -= 2
         c.setFont("Helvetica-Bold", f_size)
-        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/2 + 5, price_txt)
+        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/2, price_txt)
 
-        c.setFont("Helvetica-Bold", 22)
+        c.setFont("Helvetica-Bold", 24)
         desc_clean = fix_encoding(name).strip()
         words = desc_clean.split()
         lines, curr = [], ""
         for w in words:
             test = w if not curr else curr + " " + w
-            if c.stringWidth(test, "Helvetica-Bold", 22) <= (lbl_w - 40): curr = test
+            if c.stringWidth(test, "Helvetica-Bold", 24) <= (lbl_w - 40): curr = test
             else:
                 if curr: lines.append(curr)
                 curr = w
@@ -139,7 +139,7 @@ def generar_precios_medianos(products_list):
         ny = y + lbl_h - 45
         for line in lines:
             c.drawCentredString(x + lbl_w/2, ny, line)
-            ny -= 27
+            ny -= 29
             
         final_date = date_str if date_str else label_date
         c.setFont("Helvetica-Bold", 12)
@@ -169,12 +169,12 @@ def generar_etiquetas_chicas(products_list):
         c.rect(x, y, lbl_w, lbl_h)
         
         price_txt = format_price_arg(price).strip()
-        f_size_p = 30
+        f_size_p = 34
         while f_size_p > 12:
             if c.stringWidth(price_txt, "Helvetica-Bold", f_size_p) <= (lbl_w - 4*mm): break
             f_size_p -= 1
         c.setFont("Helvetica-Bold", f_size_p)
-        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.25), price_txt)
+        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.22), price_txt)
 
         c.setFont("Helvetica-Bold", 9)
         desc_clean = fix_encoding(name).strip()
@@ -191,7 +191,7 @@ def generar_etiquetas_chicas(products_list):
 
         ny = y + lbl_h - 5*mm
         for line in lines:
-            if ny < (y + (lbl_h * 0.25) + 16): break
+            if ny < (y + (lbl_h * 0.22) + 16): break
             c.drawCentredString(x + lbl_w/2, ny, line)
             ny -= 11
             
@@ -207,6 +207,30 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 st.title("🎈 Cotyland - Panel Multiplataforma")
+
+# --- TRUCO CSS BLINDADO PARA DARLE COLOR A LOS BOTONES POR SU ID ---
+st.html("""
+<style>
+    div[data-testid="stColumn"]:nth-of-type(1) button {
+        background-color: #d32f2f !important;
+        color: white !important;
+        font-weight: bold !important;
+        border: none !important;
+    }
+    div[data-testid="stColumn"]:nth-of-type(2) button {
+        background-color: #1976d2 !important;
+        color: white !important;
+        font-weight: bold !important;
+        border: none !important;
+    }
+    div[data-testid="stColumn"]:nth-of-type(3) button {
+        background-color: #388e3c !important;
+        color: white !important;
+        font-weight: bold !important;
+        border: none !important;
+    }
+</style>
+""")
 
 tab1, tab2 = st.tabs(["🖨️ Generador de Etiquetas", "📊 Comparador de Precios"])
 
@@ -249,11 +273,10 @@ with tab1:
         s_txt = p_view["SKU"]
         f_txt = p_view["Fecha"] if p_view["Fecha"] else date.today().strftime("%d/%m/%y")
         
-        # --- PREVISUALIZACIÓN NATIVA BLINDADA CONTRA ERRORES ---
         with st.container(border=True):
             st.write("👁️ **VISTA PREVIA DEL CARTEL SELECCIONADO**")
             st.subheader(d_txt)
-            st.metric(label="Precio Final", value=p_txt)
+            st.metric(label="Precio Final (Grosor Máximo Auto-Ajustable)", value=p_txt)
             st.text(f"Código: {s_txt}   |   Fecha: {f_txt}")
 
         st.write("")
@@ -285,27 +308,27 @@ with tab1:
             col1, col2, col3 = st.columns(3)
             with col1:
                 with st.container(border=True):
-                    st.markdown("**Opción A**\n\nCarteles Grandes\n*(10x7 cm)*")
-                    if st.button("Descargar PDF Grande", use_container_width=True):
-                        pdf = generar_carteles_grandes(lista_final)
-                        st.download_button("📥 Bajar 10x7", data=pdf, file_name="carteles_grandes_10x7.pdf", mime="application/pdf", use_container_width=True)
+                    st.markdown("🔴 **Opción A**\n\nCarteles Gigantes\n*(Ofertas - 2 por A4)*")
+                    if st.button("Descargar PDF Gigante", use_container_width=True):
+                        pdf = generar_carteles_gigantes(lista_final)
+                        st.download_button("📥 Bajar Gigantes", data=pdf, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True)
 
             with col2:
                 with st.container(border=True):
-                    st.markdown("**Opción B**\n\nPrecios Medianos\n*(Mitad de A4)*")
+                    st.markdown("🔵 **Opción B**\n\nPrecios Medianos\n*(Góndola - 10x7 cm)*")
                     if st.button("Descargar PDF Mediano", use_container_width=True):
                         pdf = generar_precios_medianos(lista_final)
-                        st.download_button("📥 Bajar Medianos", data=pdf, file_name="precios_medianos_a4.pdf", mime="application/pdf", use_container_width=True)
+                        st.download_button("📥 Bajar Medianos", data=pdf, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True)
 
             with col3:
                 with st.container(border=True):
-                    st.markdown("**Opción C**\n\nEtiquetas Chicas\n*(7x3.5 cm)*")
+                    st.markdown("🟢 **Opción C**\n\nEtiquetas Chicas\n*(Artículos - 7x3.5 cm)*")
                     if st.button("Descargar PDF Chico", use_container_width=True):
                         pdf = generar_etiquetas_chicas(lista_final)
                         st.download_button("📥 Bajar Chicas", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
 
 with tab2:
-    st.subheader("📊 Comparar Cambios de Precios")
+    st.subheader("📊 Comparador de Cambios de Precios")
     st.write("Subí las dos listas que descargaste del sistema para cruzar los datos automáticamente.")
     
     col_old, col_new = st.columns(2)
