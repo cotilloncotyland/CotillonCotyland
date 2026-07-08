@@ -3,6 +3,7 @@ import pandas as pd
 import csv
 import io
 import requests
+import base64
 from datetime import date
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfgen import canvas
@@ -55,6 +56,40 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
+# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (JavaScript en Iframe)
+# =========================================================================
+def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
+    """Genera un botón que dispara el cuadro de impresión nativo sin descargar"""
+    base64_pdf = base64.b64encode(bytes_pdf).decode('utf-8')
+    
+    componente_html = f"""
+    <script>
+        function imprimirPDF() {{
+            var iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = "data:application/pdf;base64,{base64_pdf}";
+            document.body.appendChild(iframe);
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        }}
+    </script>
+    <button onclick="imprimirPDF()" style="
+        width: 100%;
+        height: 45px;
+        background-color: #FF9800;
+        color: white;
+        border: none;
+        font-size: 16px;
+        font-weight: bold;
+        border-radius: 8px;
+        cursor: pointer;
+        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+        margin-top: 5px;
+    ">🖨️ Mandar a Imprimir Directo</button>
+    """
+    st.components.v1.html(componente_html, height=60)
+
+# =========================================================================
 # MOTORES DE GENERACIÓN DE PDF
 # =========================================================================
 def generar_carteles_gigantes(products_list):
@@ -94,7 +129,7 @@ def generar_carteles_gigantes(products_list):
         c.drawCentredString(x + lbl_w/2, y + 14, f"{sku}  {date_str if date_str else label_date}")
     c.save()
     buffer.seek(0)
-    return buffer
+    return buffer.getvalue()
 
 def generar_precios_medianos(data_rows):
     buffer = io.BytesIO()
@@ -136,7 +171,7 @@ def generar_precios_medianos(data_rows):
         if row >= 4: c.showPage(); row, col = 0, 0
     c.save()
     buffer.seek(0)
-    return buffer
+    return buffer.getvalue()
 
 def generar_etiquetas_chicas(products_list):
     buffer = io.BytesIO()
@@ -181,12 +216,24 @@ def generar_etiquetas_chicas(products_list):
         c.drawCentredString(x + lbl_w/2, y + 2*mm, f"{sku} - {date_str if date_str else label_date}")
     c.save()
     buffer.seek(0)
-    return buffer
+    return buffer.getvalue()
 
 # =========================================================================
-# CONFIGURACIÓN DE LA INTERFAZ STREAMLIT
+# INTERFAZ DE STREAMLIT
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
+
+# 🔥 ESCUDO ANTI-F11 NATIVO: Captura el teclado de la PC y bloquea la acción por defecto del navegador
+st.components.v1.html("""
+<script>
+    window.parent.document.addEventListener('keydown', function(e) {
+        if (e.key === 'F11' || e.keyCode === 122) {
+            e.preventDefault();
+            console.log("F11 del escáner interceptado con éxito.");
+        }
+    });
+</script>
+""", height=0)
 
 st.html("""
 <style>
@@ -204,7 +251,6 @@ tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etique
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
-# PESTAÑA PRINCIPAL: COLECTOR MÓVIL
 with tab0:
     @st.cache_data(ttl=1)
     def descargar_base_drive(url):
@@ -225,7 +271,6 @@ with tab0:
                     precio = r[2].strip()
                     id_orig = r[3].strip() if len(r) > 3 else ""
                     
-                    # 🧼 SERRUCHO DE PUNTOS Y CEROS EN LA BASE: Dejamos strings planos puros
                     sku_norm = sku_orig.replace(".", "").lstrip("0").lower()
                     id_norm = id_orig.replace(".", "").lstrip("0").lower()
                     
@@ -237,7 +282,7 @@ with tab0:
                     })
                 return pd.DataFrame(lista)
         except: return None
-
+    
     df_drive = descargar_base_drive(URL_DRIVE)
     
     if df_drive is None or df_drive.empty:
@@ -245,22 +290,14 @@ with tab0:
         df_drive = pd.DataFrame()
     else:
         st.caption(f"🟢 Base de datos lista: {len(df_drive)} artículos activos.")
-        
-        # 🔍 EXTRACTO DE DIAGNÓSTICO EN PANTALLA
-        with st.expander("👀 VER QUÉ DATOS TIENE LA PLANILLA DEL DRIVE EN ESTE INSTANTE"):
-            st.dataframe(df_drive.head(5))
 
     raw_query = st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="scanner_input").strip()
     
     if raw_query:
-        # 🔥 CRUCIFICAMOS EL PUNTO DEL LECTOR: Volamos punto inicial, internos y ceros sobrantes
-        query_norm = raw_query.replace(".", "").lstrip("0").lower()
-        
+        # Limpieza por si el F11 se inyecta como texto, y normalización habitual
+        query_norm = raw_query.replace("F11", "").replace(".", "").lstrip("0").lower()
         if query_norm:
-            # Match bivalente en columnas normalizadas
             condicion_codigo = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
-            
-            # Match secundario por palabras en descripción
             keywords = query_norm.split()
             condicion_desc = pd.Series(True, index=df_drive.index) if keywords else pd.Series(False, index=df_drive.index)
             for kw in keywords:
@@ -269,7 +306,7 @@ with tab0:
             resultados = df_drive[condicion_codigo | condicion_desc]
             
             if resultados.empty:
-                st.warning(f"❌ No encontrado: '{raw_query}' (Buscado como: '{query_norm}')")
+                st.warning(f"❌ No encontrado: '{raw_query}'")
             else:
                 if len(resultados) == 1:
                     prod = resultados.iloc[0]
@@ -309,18 +346,28 @@ with tab0:
             lm = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Mediano"]
             lc = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Chico"]
             
+            st.markdown("### 📥 Descargar o Imprimir Directo:")
             cg, cm, cc = st.columns(3)
             with cg:
-                if lg and st.button(f"📥 PDF ({len(lg)}) Gigantes", use_container_width=True):
-                    st.download_button("Bajar", data=generar_carteles_gigantes(lg), file_name="gigantes.pdf", mime="application/pdf", use_container_width=True)
+                if lg:
+                    st.write("**🔴 GIGANTES**")
+                    pdf_g = generar_carteles_gigantes(lg)
+                    st.download_button("⬇️ Descargar", data=pdf_g, file_name="gigantes.pdf", mime="application/pdf", use_container_width=True)
+                    embeber_e_imprimir_pdf(pdf_g, "print_g")
             with cm:
-                if lm and st.button(f"📥 PDF ({len(lm)}) Medianos", use_container_width=True):
-                    st.download_button("Bajar", data=generar_precios_medianos(lm), file_name="medianos.pdf", mime="application/pdf", use_container_width=True)
+                if lm:
+                    st.write("**🔵 MEDIANOS**")
+                    pdf_m = generar_precios_medianos(lm)
+                    st.download_button("⬇️ Descargar", data=pdf_m, file_name="medianos.pdf", mime="application/pdf", use_container_width=True)
+                    embeber_e_imprimir_pdf(pdf_m, "print_m")
             with cc:
-                if lc and st.button(f"📥 PDF ({len(lc)}) Chicos", use_container_width=True):
-                    st.download_button("Bajar", data=generar_etiquetas_chicas(lc), file_name="chicos.pdf", mime="application/pdf", use_container_width=True)
+                if lc:
+                    st.write("**🟢 CHICOS**")
+                    pdf_c = generar_etiquetas_chicas(lc)
+                    st.download_button("⬇️ Descargar", data=pdf_c, file_name="chicos.pdf", mime="application/pdf", use_container_width=True)
+                    embeber_e_imprimir_pdf(pdf_c, "print_c")
 
-# PESTAÑA HISTÓRICA DE SUBIDA MANUAL POR CSV
+# Pestañas masivas e históricas intactas
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
@@ -341,21 +388,24 @@ with tab1:
             edited_df = st.data_editor(df_products, column_config={"Imprimir": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"], hide_index=True, use_container_width=True)
             df_filtrado = edited_df[edited_df["Imprimir"] == True]
             lista_final = [(row["SKU"], row["Descripción"], row["Precio Crudo"], row["Fecha"]) for _, row in df_filtrado.iterrows()]
+            
             col1, col2, col3 = st.columns(3)
             with col1:
-                if st.button("Descargar PDF Gigante", key="btn_g_csv"):
-                    st.download_button("📥 Bajar Gigantes", data=generar_carteles_gigantes(lista_final), file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True)
+                pdf_csv_g = generar_carteles_gigantes(lista_final)
+                st.download_button("📥 Bajar Gigantes", data=pdf_csv_g, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True)
+                embeber_e_imprimir_pdf(pdf_csv_g, "csv_p_g")
             with col2:
-                if st.button("Descargar PDF Mediano", key="btn_m_csv"):
-                    st.download_button("📥 Bajar Medianos", data=generar_precios_medianos(lista_final), file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True)
+                pdf_csv_m = generar_precios_medianos(lista_final)
+                st.download_button("📥 Bajar Medianos", data=pdf_csv_m, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True)
+                embeber_e_imprimir_pdf(pdf_csv_m, "csv_p_m")
             with col3:
-                if st.button("Descargar PDF Chico", key="btn_c_csv"):
-                    st.download_button("📥 Bajar Chicas", data=generar_etiquetas_chicas(lista_final), file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
+                pdf_csv_c = generar_etiquetas_chicas(lista_final)
+                st.download_button("📥 Bajar Chicas", data=pdf_csv_c, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
+                embeber_e_imprimir_pdf(pdf_csv_c, "csv_p_c")
         except Exception as e: st.error(f"❌ Error: {e}")
 
-# PESTAÑA HISTÓRICA COMPARADORA DE LISTAS
 with tab2:
-    st.subheader("📊 Comparar Cambios de Precios")
+    st.subheader("📊 Compartar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
     file_b = st.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="file_b_up")
     if file_a and file_b:
