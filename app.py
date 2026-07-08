@@ -56,7 +56,7 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (Corregida sin bloqueos)
+# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (Corregida al 100%)
 # =========================================================================
 def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     """Genera un botón que abre el PDF limpio en una pestaña nueva y lanza la impresión en el acto"""
@@ -65,20 +65,19 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     componente_html = f"""
     <script>
         function ejecutarImpresion() {{
-            // Convertimos el base64 a un objeto Blob puro de PDF para evitar bloqueos del navegador
+            // Convertimos el base64 a un objeto Blob puro de PDF para evitar bloqueos
             var byteCharacters = atob("{base64_pdf}");
-            var byteNumbers = new Array(bytesCharacters.length);
-            for (var i = 0; i < bytesCharacters.length; i++) {{
-                byteNumbers[i] = bytesCharacters.charCodeAt(i);
+            var byteNumbers = new Array(byteCharacters.length);
+            for (var i = 0; i < byteCharacters.length; i++) {{
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
             }}
             var byteArray = new Uint8Array(byteNumbers);
             var blob = new Blob([byteArray], {{type: 'application/pdf'}});
             var fileURL = URL.createObjectURL(blob);
             
-            // Abrimos la ventana limpia con el archivo fiel e imprimimos
-            var win = window.open(file_url);
+            // Abrimos la ventana limpia y mandamos el archivo fiel
+            var win = window.open(fileURL);
             if (win) {{
-                win.document.write("<iframe src='" + fileURL + "' width='100%' height='100%' style='border:none;'></iframe>");
                 setTimeout(function() {{
                     win.focus();
                     win.print();
@@ -269,7 +268,6 @@ st.html("""
 st.title("🎈 Cotyland - Panel Multiplataforma")
 tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
-# Inicializadores estables en la memoria del hilo principal
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 if "ultimo_producto" not in st.session_state:
@@ -314,7 +312,6 @@ with tab0:
     else:
         st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché RAM.")
 
-    # Configuración de tanda automática
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
     tamanio_elegido = st.radio("Seleccioná qué tamaño querés que se guarde automáticamente al escanear:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
 
@@ -340,13 +337,11 @@ with tab0:
         
         st.session_state.colector_input = ""
 
-    # Buscador continuo
     st.text_input("🔎 ESCANEÁ ACÁ (MODO CORRELATIVO CONSTANTE):", key="colector_input", on_change=procesar_colector_veloz, placeholder="Hacé foco acá y pasá los códigos de corrido...")
 
     if st.session_state.ultimo_producto:
         st.info(st.session_state.ultimo_producto)
 
-    # Renderizado del carrito
     if st.session_state.cola_impresion:
         st.write("---")
         st.subheader("📋 Lista Correlativa de Impresión Actual")
