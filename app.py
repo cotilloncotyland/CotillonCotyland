@@ -198,14 +198,7 @@ st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centere
 st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
-    
-    div[data-testid="stColumn"] button {
-        height: 65px !important;
-        font-size: 18px !important;
-        font-weight: bold !important;
-        border-radius: 12px !important;
-    }
-    
+    div[data-testid="stColumn"] button { height: 65px !important; font-size: 18px !important; font-weight: bold !important; border-radius: 12px !important; }
     div[data-testid="stColumn"]:nth-of-type(1) button { background-color: #D32F2F !important; color: white !important; border: none !important; }
     div[data-testid="stColumn"]:nth-of-type(2) button { background-color: #1976D2 !important; color: white !important; border: none !important; }
     div[data-testid="stColumn"]:nth-of-type(3) button { background-color: #388E3C !important; color: white !important; border: none !important; }
@@ -213,17 +206,16 @@ st.html("""
 """)
 
 st.title("🎈 Cotyland - Panel Multiplataforma")
-
 tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL (Con Auto-Limpieza de Puntos)
+# PESTAÑA 1: COLECTOR MÓVIL
 # -------------------------------------------------------------------------
 with tab0:
-    @st.cache_data(ttl=30)
+    @st.cache_data(ttl=2)
     def descargar_base_drive(url):
         try:
             res = requests.get(url)
@@ -233,20 +225,22 @@ with tab0:
                 if not lineas: return None
                 primera_linea = lineas[0]
                 separador = ";" if primera_linea.count(";") > primera_linea.count(",") else ","
-                reader = csv.reader(lineas, delimiter=separador)
+                
+                # BLINDAJE CRÍTICO: QUOTE_NONE evita el bucle infinito con la comilla del Apps Script
+                reader = csv.reader(lineas, delimiter=separador, quoting=csv.QUOTE_NONE)
                 next(reader)
                 lista = []
                 for r in reader:
                     if not r or len(r) < 3: continue
-                    sku_raw = r[0].strip()
-                    # Quitamos puntos molestos del inicio/fin en la base de datos
-                    sku_clean = sku_raw.strip(".") 
-                    desc = fix_encoding(r[1].strip().strip('"'))
-                    precio_raw = r[2].strip()
+                    
+                    # Limpiamos las comillas residuales que inyecta Google Sheets automáticamente
+                    sku_raw = r[0].replace('"', '').replace("'", "").strip()
+                    desc = fix_encoding(r[1].replace('"', '').strip())
+                    precio_raw = r[2].replace('"', '').strip()
+                    
                     if not sku_raw or not desc: continue
                     lista.append({
-                        "SKU": sku_raw, 
-                        "SKU_Clean": sku_clean,
+                        "SKU_Original": sku_raw, 
                         "Descripción": desc, 
                         "Precio Crudo": precio_raw,
                         "Fecha": date.today().strftime("%d/%m/%y")
@@ -259,50 +253,53 @@ with tab0:
     
     if df_drive is None or df_drive.empty:
         st.error("⚠️ Error de lectura. Verificá que el Spreadsheet esté público.")
-        df_drive = pd.DataFrame(columns=["SKU", "SKU_Clean", "Descripción", "Precio Crudo", "Fecha"])
+        df_drive = pd.DataFrame(columns=["SKU_Original", "Descripción", "Precio Crudo", "Fecha"])
     else:
-        st.caption(f"🟢 Lista en tiempo real vinculada. {len(df_drive)} artículos activos.")
+        st.caption(f"🟢 Base de datos unificada en vivo. {len(df_drive)} artículos activos cargados.")
 
-    raw_query = st.text_input("🔎 Ingresá código de barra o descripción:", key="scanner_input", placeholder="Escribí acá...").strip()
+    raw_query = st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="scanner_input", placeholder="Hacé foco acá con el lector...").strip()
     
     if raw_query:
-        # Limpiamos el punto de lo que se busca para hacer match perfecto
-        query_clean = raw_query.strip(".").lower()
-        keywords = query_clean.split()
+        query_lower = raw_query.lower()
         
-        condicion = pd.Series(True, index=df_drive.index)
+        # Búsqueda ultra-fiel de coincidencia exacta por SKU original
+        condicion_sku = (df_drive["SKU_Original"].str.lower() == query_lower)
+        
+        # Búsqueda por palabras en la descripción por si escriben texto a mano
+        keywords = query_lower.split()
+        condicion_desc = pd.Series(True, index=df_drive.index)
         for kw in keywords:
-            condicion &= (df_drive["SKU_Clean"].str.lower().str.contains(kw)) | (df_drive["Descripción"].str.lower().str.contains(kw))
+            condicion_desc &= df_drive["Descripción"].str.lower().str.contains(kw)
             
-        resultados = df_drive[condicion]
+        resultados = df_drive[condicion_sku | condicion_desc]
         
         if resultados.empty:
-            st.warning(f"❌ No se encontró ningún artículo para: {raw_query}")
+            st.warning(f"❌ No encontrado en el archivo: '{raw_query}'")
         else:
             if len(resultados) == 1:
                 prod = resultados.iloc[0]
             else:
                 opciones_mostrar = resultados.copy()
-                opciones_mostrar["Etiqueta"] = opciones_mostrar["SKU"] + " - " + opciones_mostrar["Descripción"]
-                seleccionado = st.selectbox("Se encontraron varias opciones, tocá la correcta:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
+                opciones_mostrar["Etiqueta"] = opciones_mostrar["SKU_Original"] + " - " + opciones_mostrar["Descripción"]
+                seleccionado = st.selectbox("Múltiples opciones encontradas:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
                 prod = df_drive.loc[seleccionado]
             
-            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO:** {prod['SKU']}")
+            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO FIEL:** {prod['SKU_Original']}")
             st.metric(label="💰 PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
             
             st.write("📐 **Mandar a Imprimir:**")
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("🔴 GIGANTE", key="btn_g_u", use_container_width=True):
-                    st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
+                    st.session_state.cola_impresion.append((prod["SKU_Original"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
                     st.toast("¡Agregado a Gigantes! 🔴")
             with c2:
                 if st.button("🔵 MEDIANO", key="btn_m_u", use_container_width=True):
-                    st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
+                    st.session_state.cola_impresion.append((prod["SKU_Original"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
                     st.toast("¡Agregado a Medianos! 🔵")
             with c3:
                 if st.button("🟢 CHICO", key="btn_c_u", use_container_width=True):
-                    st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
+                    st.session_state.cola_impresion.append((prod["SKU_Original"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
                     st.toast("¡Agregado a Chicos! 🟢")
 
     if st.session_state.cola_impresion:
@@ -312,7 +309,6 @@ with tab0:
         df_cola.insert(0, "Quitar ❌", True)
         
         edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True)
-        
         df_limpio = edited_cola[edited_cola["Quitar ❌"] == True]
         st.session_state.cola_impresion = [(row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in df_limpio.iterrows()]
         
@@ -337,58 +333,28 @@ with tab0:
                     pdf = generar_etiquetas_chicas(lc)
                     st.download_button("Bajar", data=pdf, file_name="movil_chicos.pdf", mime="application/pdf", use_container_width=True)
 
-# -------------------------------------------------------------------------
-# PESTAÑA 2: CARGA MASIVA TRADICIONAL DE AYER (Comas ',')
-# -------------------------------------------------------------------------
+# Pestaña 2: Carga masiva tradicional
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
-    
     if uploaded_file:
         try:
             bytes_data = uploaded_file.getvalue()
             content = bytes_data.decode("latin1")
             reader = csv.reader(content.splitlines())
-            
             parsed_products = []
             for r in reader:
                 if not r: continue
-                if len(r) < 3:
-                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas.")
-                
+                if len(r) < 3: raise ValueError("Estructura inválida.")
                 r_ext = list(r) + [""] * (5 - len(r))
                 sku = r_ext[2].strip()
-                parsed_products.append({
-                    "Imprimir": True,
-                    "SKU": sku if sku else "S/C",
-                    "Descripción": fix_encoding(r_ext[1].strip().strip('"')),
-                    "Precio Crudo": r_ext[0].strip(),
-                    "Fecha": r_ext[4].strip()
-                })
-                
+                parsed_products.append({"Imprimir": True, "SKU": sku if sku else "S/C", "Descripción": fix_encoding(r_ext[1].strip().strip('"')), "Precio Crudo": r_ext[0].strip(), "Fecha": r_ext[4].strip()})
             df_products = pd.DataFrame(parsed_products)
-            st.success(f"✅ ¡Archivo de precios correcto! {len(df_products)} productos detectados.")
-            st.write("---")
-            st.subheader("2. Seleccioná un producto para PREVISUALIZAR:")
-            
-            selected_row = st.selectbox(
-                "🔎 Elegí un producto para ver el boceto real en pantalla:",
-                options=range(len(df_products)),
-                format_func=lambda idx: f"{df_products.iloc[idx]['SKU']} - {df_products.iloc[idx]['Descripción']} ({format_price_arg(df_products.iloc[idx]['Precio Crudo'])})"
-            )
-            
-            p_view = df_products.iloc[selected_row]
-            with st.container(border=True):
-                st.write("👁️ **VISTA PREVIA DEL CARTEL SELECCIONADO**")
-                st.subheader(p_view["Descripción"])
-                st.metric(label="Precio Final", value=format_price_arg(p_view["Precio Crudo"]))
-
+            st.success(f"✅ ¡Archivo leído! {len(df_products)} productos detectados.")
+            selected_row = st.selectbox("🔎 Previsualizar:", options=range(len(df_products)), format_func=lambda idx: f"{df_products.iloc[idx]['SKU']} - {df_products.iloc[idx]['Descripción']}")
             edited_df = st.data_editor(df_products, column_config={"Imprimir": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"], hide_index=True, use_container_width=True)
             df_filtrado = edited_df[edited_df["Imprimir"] == True]
             lista_final = [(row["SKU"], row["Descripción"], row["Precio Crudo"], row["Fecha"]) for _, row in df_filtrado.iterrows()]
-            
-            st.write("---")
-            st.subheader("3. Descargar Formato de Impresión:")
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("Descargar PDF Gigante", key="btn_g_csv"):
@@ -402,12 +368,9 @@ with tab1:
                 if st.button("Descargar PDF Chico", key="btn_c_csv"):
                     pdf = generar_etiquetas_chicas(lista_final)
                     st.download_button("📥 Bajar Chicas", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
-        except Exception as e:
-            st.error(f"❌ ARCHIVO INCORRECTO: {e}")
+        except Exception as e: st.error(f"❌ Error: {e}")
 
-# -------------------------------------------------------------------------
-# PESTAÑA 3: COMPARADOR DE PRECIOS DE AYER (Comas ',')
-# -------------------------------------------------------------------------
+# Pestaña 3: Comparador de cambios
 with tab2:
     st.subheader("📊 Comparar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
@@ -420,25 +383,19 @@ with tab2:
                     s = str(valor).replace(".", "").replace(",", ".").strip()
                     try: return float(s)
                     except: return None
-
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
                     if df.shape[1] < 15: raise IndexError("Estructura inválida.")
                     df_res = pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
-
                 df_a = cargar_df_crudo(file_a)
                 df_b = cargar_df_crudo(file_b)
                 df_old, df_new = (df_a, df_b) if df_b["Precio_num"].mean() >= df_a["Precio_num"].mean() else (df_b, df_a)
-
                 merged = pd.merge(df_old[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_old"}), df_new[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_new"}), on="SKU", how="inner")
                 changed = merged[merged["Precio_old"] != merged["Precio_new"]]
-
                 df_final = pd.merge(changed[["SKU"]], df_new[["SKU", "Descripcion", "Precio"]], on="SKU", how="left").rename(columns={"Precio": "Precio_Nuevo"})
                 df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_Anterior"}), on="SKU", how="left")[["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"]].sort_values("SKU")
-
                 st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
                 st.dataframe(df_final, use_container_width=True)
-            except Exception as e:
-                st.error(f"❌ ARCHIVO INCORRECTO: {e}")
+            except Exception as e: st.error(f"❌ Error: {e}")
