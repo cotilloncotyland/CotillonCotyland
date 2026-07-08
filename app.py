@@ -10,9 +10,9 @@ from reportlab.lib.units import cm, mm
 from reportlab.pdfbase import pdfmetrics
 
 # =========================================================================
-# ID DE TU ARCHIVO MAESTRO EN DRIVE (Configurado con tu CSV compartido)
+# ID DE TU HOJA DE CÁLCULO FIJA (Google Sheets público unificado)
 # =========================================================================
-ID_DRIVE = "1tkAsYaZdVRSrSd4prWHrMSqNLw3-MgMR" 
+ID_DRIVE = "1z1naxcQyryThMHj3H9K3xi27EDuugBPnFKrrwrJ8v1Y" 
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{ID_DRIVE}/export?format=csv"
 
 # =========================================================================
@@ -35,7 +35,6 @@ def fix_encoding(text: str) -> str:
 def format_price_arg(price_str: str) -> str:
     if not price_str: return ""
     s = str(price_str).replace("$", "").replace(" ", "")
-    # Ajuste interno de conversión si viene del Drive con comas, sin alterar lo masivo de ayer
     if "," in s and "." not in s:
         s = s.replace(".", "").replace(",", ".")
     try: value = float(s)
@@ -192,7 +191,7 @@ def generar_etiquetas_chicas(products_list):
     return buffer
 
 # =========================================================================
-# INTERFAZ DE USUARIO CON TABS INDEPENDIENTES
+# INTERFAZ DE USUARIO CONFIGURADA
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 st.title("🎈 Cotyland - Panel Multiplataforma")
@@ -211,18 +210,18 @@ if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL (Drive - Punto y coma ';')
+# PESTAÑA 1: COLECTOR MÓVIL (Sheets Fijo)
 # -------------------------------------------------------------------------
 with tab0:
     st.subheader("📱 Colector Móvil de Etiquetas")
     
-    @st.cache_data(ttl=300)
+    @st.cache_data(ttl=60)
     def descargar_base_drive(url):
         try:
             res = requests.get(url)
             if res.status_code == 200:
-                content = res.content.decode("latin1")
-                reader = csv.reader(content.splitlines(), delimiter=";")
+                content = res.content.decode("utf-8")
+                reader = csv.reader(content.splitlines())
                 next(reader)
                 lista = []
                 for r in reader:
@@ -244,12 +243,12 @@ with tab0:
 
     df_drive = descargar_base_drive(URL_DRIVE)
     if df_drive is None:
-        st.error("⚠️ Error leyendo desde Drive. Comprobá que el archivo sea público.")
+        st.error("⚠️ Error de conexión con el Spreadsheet. Revisá que esté compartido de forma pública.")
         df_drive = pd.DataFrame(columns=["SKU", "Descripción", "Precio Crudo", "Fecha"])
     else:
-        st.caption(f"🟢 Conectado a Drive. Base de datos: {len(df_drive)} artículos con precio.")
+        st.caption(f"🟢 Conectado al Spreadsheet Puente. {len(df_drive)} artículos activos con precio.")
 
-    query = st.text_input("🔎 Buscá por Código (entero/parcial) o palabra clave de la Descripción:", key="scanner_input", placeholder="Ej: caja 260...").strip().lower()
+    query = st.text_input("🔎 Buscá por Código o palabra clave de la Descripción:", key="scanner_input", placeholder="Ej: caja 260...").strip().lower()
     
     if query:
         keywords = query.split()
@@ -287,6 +286,7 @@ with tab0:
             resultados_mostrar["Mostrar"] = resultados_mostrar["SKU"] + " - " + resultados_mostrar["Descripción"] + " (" + resultados_mostrar["Precio Crudo"] + ")"
             
             seleccionado = st.radio("Resultados de la búsqueda:", options=resultados_mostrar.index, format_func=lambda idx: resultados_mostrar.loc[idx, "Mostrar"], label_visibility="collapsed")
+            prod = df_drive.loc[seleccion==seleccionado] if hasattr(df_drive, 'loc') else df_drive.iloc[seleccionado]
             prod = df_drive.loc[seleccionado]
             st.success(f"📦 Seleccionado: {prod['Descripción']}")
             st.metric(label="Precio Actual", value=format_price_arg(prod["Precio Crudo"]))
