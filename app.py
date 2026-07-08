@@ -223,25 +223,23 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# 🔥 EL PUENTE DE ENTER INTELIGENTE: Bloquea el F11 del escáner y fuerza el Enter automáticamente a los 100ms
+# 🔥 VELOCIDAD COLAPINTO: Bajamos la espera a 15 milisegundos para que sea una ráfaga instantánea
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
         if (e.key === 'F11' || e.keyCode === 122) {
-            e.preventDefault(); // Evitamos que cambie el tamaño de la pantalla
-            console.log("F11 frenado. Lanzando Enter puente automático...");
+            e.preventDefault(); // Congela el F11 de raíz para que no parpadee la pantalla
             
-            // Esperamos 100 milisegundos a que el escáner termine de escribir los números
+            // Forzado ultra-veloz a los 15ms (justo para que entren los números)
             setTimeout(function() {
                 var inputs = window.parent.document.querySelectorAll('input[type="text"]');
                 if (inputs.length > 0) {
-                    // Buscamos el input del buscador, le disparamos el evento Enter nativo
                     var eventoEnter = new KeyboardEvent('keydown', {
                         bubbles: true, cancelable: true, key: 'Enter', keyCode: 13
                     });
                     inputs[0].dispatchEvent(eventoEnter);
                 }
-            }, 100);
+            }, 15);
         }
     });
 </script>
@@ -328,6 +326,7 @@ with tab0:
                 
                 codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
                 
+                # Renderiza el producto y precio en pantalla
                 st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **SKU SISTEMA:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
                 st.metric(label="💰 PRECIO", value=format_price_arg(prod["Precio Crudo"]))
                 
