@@ -211,6 +211,9 @@ tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etique
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
+# -------------------------------------------------------------------------
+# PESTAÑA 1: COLECTOR MÓVIL
+# -------------------------------------------------------------------------
 with tab0:
     @st.cache_data(ttl=2)
     def descargar_base_drive(url):
@@ -236,15 +239,15 @@ with tab0:
                     
                     if not sku_raw or not desc: continue
                     
-                    # 🔥 NORMALIZACIÓN ABSOLUTA EN LA BASE: Eliminamos decimales raros (.0) y espacios de los códigos
-                    sku_norm = sku_raw.split(".")[0].strip().lower()
-                    id_norm = id_art.split(".")[0].strip().lower()
+                    # Normalización absoluta: le podamos puntos invisibles que meta Sheets
+                    sku_clean = sku_raw.replace(".", "").strip().lower()
+                    id_clean = id_art.replace(".", "").strip().lower()
                     
                     lista.append({
                         "SKU_Original": sku_raw, 
-                        "SKU_Norm": sku_norm,
+                        "SKU_Clean": sku_clean,
                         "Id_Articulo": id_art,
-                        "Id_Norm": id_norm,
+                        "Id_Clean": id_clean,
                         "Descripción": desc, 
                         "Precio Crudo": precio_raw,
                         "Fecha": date.today().strftime("%d/%m/%y")
@@ -257,26 +260,24 @@ with tab0:
     
     if df_drive is None or df_drive.empty:
         st.error("⚠️ Error de lectura. Verificá que el Spreadsheet esté público.")
-        df_drive = pd.DataFrame(columns=["SKU_Original", "SKU_Norm", "Id_Articulo", "Id_Norm", "Descripción", "Precio Crudo", "Fecha"])
+        df_drive = pd.DataFrame(columns=["SKU_Original", "SKU_Clean", "Id_Articulo", "Id_Clean", "Descripción", "Precio Crudo", "Fecha"])
     else:
-        st.caption(f"🟢 Base de datos unificada en vivo. {len(df_drive)} artículos activos cargados.")
+        st.caption(f"🟢 Base de datos vinculada correctamente. {len(df_drive)} artículos activos.")
 
     raw_query = st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="scanner_input", placeholder="Hacé foco acá con el lector...").strip()
     
     if raw_query:
-        # 🔥 NORMALIZACIÓN DE TU BÚSQUEDA: Borramos puntos y pasamos a minúsculas
+        # 🔥 EL PASE DE MAGIA: Si viene con punto del lector (.10281612), se lo borramos en el acto para hacer match con el 10281612 limpio de la base
         query_clean = raw_query.replace(".", "").strip().lower()
         
         if query_clean:
-            # ⚡ BUSCADOR TOLERANTE POR INCLUSIÓN CONTENIDA
+            # Buscador bivalente exacto o por coincidencia contenida
             condicion_sku = (
-                (df_drive["SKU_Norm"] == query_clean) | 
-                (df_drive["Id_Norm"] == query_clean) |
-                (df_drive["SKU_Norm"].str.contains(query_clean, na=False)) |
-                (df_drive["Id_Norm"].str.contains(query_clean, na=False))
+                (df_drive["SKU_Clean"] == query_clean) | 
+                (df_drive["Id_Clean"] == query_clean)
             )
             
-            # Búsqueda por texto en descripción
+            # Buscador por palabra en la descripción
             keywords = query_clean.split()
             condicion_desc = pd.Series(True, index=df_drive.index)
             for kw in keywords:
@@ -285,7 +286,7 @@ with tab0:
             resultados = df_drive[condicion_sku | condicion_desc]
             
             if resultados.empty:
-                st.warning(f"❌ No encontrado en el archivo: '{raw_query}' (Limpio: '{query_clean}')")
+                st.warning(f"❌ No encontrado: '{raw_query}'")
             else:
                 if len(resultados) == 1:
                     prod = resultados.iloc[0]
@@ -295,7 +296,7 @@ with tab0:
                     seleccionado = st.selectbox("Múltiples opciones encontradas:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
                     prod = df_drive.loc[seleccionado]
                 
-                # Definimos el código corto para que figure limpio en la etiqueta física
+                # Para imprimir el cartel usamos el SKU limpio del sistema (el número corto)
                 codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
                 
                 st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **SKU SISTEMA:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
@@ -344,7 +345,7 @@ with tab0:
                     st.download_button("Bajar", data=pdf, file_name="movil_medianos.pdf", mime="application/pdf", use_container_width=True)
             with cc:
                 if lc and st.button(f"📥 PDF ({len(lc)}) Chicos", key="dl_c", use_container_width=True):
-                    pdf = generar_etiquetas_chicas(lc)
+                    pdf = patriarchal = generar_etiquetas_chicas(lc)
                     st.download_button("Bajar", data=pdf, file_name="movil_chicos.pdf", mime="application/pdf", use_container_width=True)
 
 # Pestañas masivas e históricas intactas
