@@ -56,12 +56,10 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (JavaScript Corrección de Permisos)
+# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA
 # =========================================================================
 def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
-    """Genera un botón real que dispara el cuadro de impresión sin bloqueos de seguridad"""
     base64_pdf = base64.b64encode(bytes_pdf).decode('utf-8')
-    
     componente_html = f"""
     <script>
         function ejecutarImpresion() {{
@@ -223,7 +221,7 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# Interceptador F11 de PC invariable y blindado
+# 🔥 EL ESCUDO INTELLIGENT DE ENTRADA: Ataja F11 y fuerza cambio nativo sin latencias
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
@@ -238,7 +236,7 @@ st.components.v1.html("""
                     });
                     inputBuscador.dispatchEvent(eventoEnter);
                 }
-            }, 8);
+            }, 5);
         }
     });
 </script>
@@ -247,31 +245,28 @@ st.components.v1.html("""
 st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
-    div[data-testid="stColumn"] button { height: 65px !important; font-size: 18px !important; font-weight: bold !important; border-radius: 12px !important; }
-    div[data-testid="stColumn"]:nth-of-type(1) button { background-color: #D32F2F !important; color: white !important; border: none !important; }
-    div[data-testid="stColumn"]:nth-of-type(2) button { background-color: #1976D2 !important; color: white !important; border: none !important; }
-    div[data-testid="stColumn"]:nth-of-type(3) button { background-color: #388E3C !important; color: white !important; border: none !important; }
+    div[data-testid="stColumn"] button { height: 50px !important; font-size: 16px !important; font-weight: bold !important; border-radius: 10px !important; }
 </style>
 """)
 
 st.title("🎈 Cotyland - Panel Multiplataforma")
 tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
-# 🔥 DECLARACIÓN RESISTENTE DE VARIABLES DE MEMORIA DE SESIÓN
+# Inicializadores estables en la memoria del hilo principal
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
-if "producto_actual" not in st.session_state:
-    st.session_state.producto_actual = None
+if "ultimo_producto" not in st.session_state:
+    st.session_state.ultimo_producto = ""
 
 with tab0:
-    @st.cache_data(ttl=1)
-    def descargar_base_drive(url):
+    # ⚡ CACHÉ INFINITO EN RAM: Descarga una sola vez y no frena el flujo
+    @st.cache_data
+    def descargar_base_estatica(url):
         try:
             res = requests.get(url)
             if res.status_code == 200:
                 content = res.content.decode("utf-8")
                 lineas = content.splitlines()
-                if not lineas: return None
                 separador = ";" if lineas[0].count(";") > lineas[0].count(",") else ","
                 reader = csv.reader(lineas, delimiter=separador)
                 next(reader)
@@ -283,87 +278,72 @@ with tab0:
                     precio = r[2].strip()
                     id_orig = r[3].strip() if len(r) > 3 else ""
                     
-                    sku_norm = sku_orig.replace(".", "").lstrip("0").lower()
-                    id_norm = id_orig.replace(".", "").lstrip("0").lower()
-                    
                     lista.append({
-                        "SKU_Original": sku_orig, "SKU_Norm": sku_norm,
-                        "Id_Articulo": id_orig, "Id_Norm": id_norm,
+                        "SKU_Original": sku_orig, 
+                        "SKU_Norm": sku_orig.replace(".", "").lstrip("0").lower(),
+                        "Id_Articulo": id_orig, 
+                        "Id_Norm": id_orig.replace(".", "").lstrip("0").lower(),
                         "Descripción": desc, "Precio Crudo": precio,
                         "Fecha": date.today().strftime("%d/%m/%y")
                     })
                 return pd.DataFrame(lista)
         except: return None
-    
-    df_drive = descargar_base_drive(URL_DRIVE)
+        return None
+
+    df_drive = descargar_base_estatica(URL_DRIVE)
     
     if df_drive is None or df_drive.empty:
-        st.error("⚠️ Error cargando la base de datos.")
+        st.error("⚠️ Error cargando base de datos estática.")
         df_drive = pd.DataFrame()
     else:
-        st.caption(f"🟢 Base de datos unificada: {len(df_drive)} artículos activos.")
+        st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché RAM.")
 
-    # Lógica de callback modificada para asegurar persistencia cruzada
-    def procesar_escaneo():
-        query_cruda = st.session_state.sk_input.strip()
+    # 🎛️ CONFIGURACIÓN DE TANDA AUTOMÁTICA
+    st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
+    tamanio_elegido = st.radio("Seleccioná qué tamaño querés que se guarde automáticamente al escanear:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
+
+    # Lógica de procesamiento directo e inyección instantánea en el Carrito
+    def procesar_colector_veloz():
+        query_cruda = st.session_state.colector_input.strip()
         if query_cruda:
             query_norm = query_cruda.replace("F11", "").replace(".", "").lstrip("0").lower()
             if query_norm:
-                condicion_codigo = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
-                keywords = query_norm.split()
-                condicion_desc = pd.Series(True, index=df_drive.index) if keywords else pd.Series(False, index=df_drive.index)
-                for kw in keywords:
-                    condicion_desc &= df_drive["Descripción"].str.lower().str.contains(kw, na=False)
+                condicion = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
+                resultados = df_drive[condicion]
                 
-                resultados = df_drive[condicion_codigo | condicion_desc]
                 if not resultados.empty:
-                    st.session_state.producto_actual = resultados.iloc[0].to_dict()
+                    prod = resultados.iloc[0]
+                    codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
+                    tipo_str = tamanio_elegido.split(" ")[1] # Extrae Chico, Mediano o Gigante
+                    
+                    # 🔥 INYECCIÓN INMEDIATA EN LA COLA CORRELATIVA: No se pierde jamás
+                    st.session_state.cola_impresion.append((
+                        codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], tipo_str
+                    ))
+                    st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']} ({tamanio_elegido}) - {format_price_arg(prod['Precio Crudo'])}"
                 else:
-                    st.session_state.producto_actual = {"error": f"❌ No encontrado: '{query_cruda}'"}
+                    st.session_state.ultimo_producto = f"❌ Código no encontrado en base de datos: '{query_cruda}'"
         
-        # 🔥 AUTOLIMPIEZA RADICAL: Vaciamos la barra de texto pero mantendremos st.session_state.cola_impresion intacto
-        st.session_state.sk_input = ""
+        # Saneamiento de barra de texto inmediato para habilitar el próximo tiro del lector
+        st.session_state.colector_input = ""
 
-    # Caja de texto limpia vinculada al ciclo de refresco masivo continuo
-    st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="sk_input", on_change=procesar_escaneo, placeholder="Hacé foco acá para escanear a ráfaga...")
+    # Buscador en modo ráfaga continua
+    st.text_input("🔎 ESCANEÁ ACÁ (MODO CORRELATIVO CONSTANTE):", key="colector_input", on_change=procesar_colector_veloz, placeholder="Hacé foco acá y pasá los códigos de corrido...")
 
-    # Renderizado persistente del producto activo en pantalla
-    if st.session_state.producto_actual:
-        prod = st.session_state.producto_actual
-        if "error" in prod:
-            st.warning(prod["error"])
-        else:
-            codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
-            
-            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **SKU SISTEMA:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
-            st.metric(label="💰 PRECIO", value=format_price_arg(prod["Precio Crudo"]))
-            
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                if st.button("🔴 GIGANTE", use_container_width=True):
-                    st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
-                    st.toast("¡Agregado a Gigantes!")
-            with c2:
-                if st.button("🔵 MEDIANO", use_container_width=True):
-                    st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
-                    st.toast("¡Agregado a Medianos!")
-            with c3:
-                if st.button("🟢 CHICO", use_container_width=True):
-                    st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
-                    st.toast("¡Agregado a Chicos!")
+    # Notificación flash de control en pantalla del último artículo procesado
+    if st.session_state.ultimo_producto:
+        st.info(st.session_state.ultimo_producto)
 
-    # El bloque de renderizado del Carrito ahora es 100% inmune a la autolimpia de la barra superior
+    # RENDIMIENTO DEL CARRITO PERSISTENTE UNIFICADO
     if st.session_state.cola_impresion:
         st.write("---")
-        st.subheader("📋 Tu Carrito de Impresión")
+        st.subheader("📋 Lista Correlativa de Impresión Actual")
         
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
         
-        # El data_editor actualiza directamente la cola de impresión viva
-        edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True, key="editor_carrito")
-        
-        # Mantenemos sincronizada la sesión con las filas marcadas
+        # El data editor permite remover líneas erróneas sin romper el flujo
+        edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True, key="tabla_viva")
         st.session_state.cola_impresion = [(row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in edited_cola[edited_cola["Quitar ❌"] == True].iterrows()]
         
         if st.session_state.cola_impresion:
@@ -371,28 +351,28 @@ with tab0:
             lm = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Mediano"]
             lc = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Chico"]
             
-            st.markdown("### 📥 Descargar o Imprimir Directo Masivo:")
+            st.markdown("### 📥 Panel de Salida Masiva:")
             cg, cm, cc = st.columns(3)
             with cg:
                 if lg:
-                    st.write("**🔴 GIGANTES**")
+                    st.write(f"**🔴 GIGANTES ({len(lg)})**")
                     pdf_g = generar_carteles_gigantes(lg)
-                    st.download_button("⬇️ Descargar", data=pdf_g, file_name="gigantes.pdf", mime="application/pdf", use_container_width=True, key="btn_dl_g")
-                    embeber_e_imprimir_pdf(pdf_g, "btn_pr_g")
+                    st.download_button("⬇️ Descargar", data=pdf_g, file_name="gigantes.pdf", mime="application/pdf", use_container_width=True, key="f_g")
+                    embeber_e_imprimir_pdf(pdf_g, "p_g")
             with cm:
                 if lm:
-                    st.write("**🔵 MEDIANOS**")
+                    st.write(f"**🔵 MEDIANOS ({len(lm)})**")
                     pdf_m = generar_precios_medianos(lm)
-                    st.download_button("⬇️ Descargar", data=pdf_m, file_name="medianos.pdf", mime="application/pdf", use_container_width=True, key="btn_dl_m")
-                    embeber_e_imprimir_pdf(pdf_m, "btn_pr_m")
+                    st.download_button("⬇️ Descargar", data=pdf_m, file_name="medianos.pdf", mime="application/pdf", use_container_width=True, key="f_m")
+                    embeber_e_imprimir_pdf(pdf_m, "p_m")
             with cc:
                 if lc:
-                    st.write("**🟢 CHICOS**")
+                    st.write(f"**🟢 CHICOS ({len(lc)})**")
                     pdf_c = generar_etiquetas_chicas(lc)
-                    st.download_button("⬇️ Descargar", data=pdf_c, file_name="chicos.pdf", mime="application/pdf", use_container_width=True, key="btn_dl_c")
-                    embeber_e_imprimir_pdf(pdf_c, "btn_pr_c")
+                    st.download_button("⬇️ Descargar", data=pdf_c, file_name="chicos.pdf", mime="application/pdf", use_container_width=True, key="f_c")
+                    embeber_e_imprimir_pdf(pdf_c, "p_c")
 
-# Pestañas masivas e históricas intactas
+# Pestañas históricas intactas
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
@@ -417,15 +397,15 @@ with tab1:
             col1, col2, col3 = st.columns(3)
             with col1:
                 pdf_csv_g = generar_carteles_gigantes(lista_final)
-                st.download_button("📥 Bajar Gigantes", data=pdf_csv_g, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True, key="csv_g")
+                st.download_button("📥 Bajar Gigantes", data=pdf_csv_g, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True, key="c_g")
                 embeber_e_imprimir_pdf(pdf_csv_g, "csv_p_g")
             with col2:
                 pdf_csv_m = generar_precios_medianos(lista_final)
-                st.download_button("📥 Bajar Medianos", data=pdf_csv_m, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True, key="csv_m")
+                st.download_button("📥 Bajar Medianos", data=pdf_csv_m, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True, key="c_m")
                 embeber_e_imprimir_pdf(pdf_csv_m, "csv_p_m")
             with col3:
                 pdf_csv_c = generar_etiquetas_chicas(lista_final)
-                st.download_button("📥 Bajar Chicas", data=pdf_csv_c, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True, key="csv_c")
+                st.download_button("📥 Bajar Chicas", data=pdf_csv_c, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True, key="c_c")
                 embeber_e_imprimir_pdf(pdf_csv_c, "csv_p_c")
         except Exception as e: st.error(f"❌ Error: {e}")
 
