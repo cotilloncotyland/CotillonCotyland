@@ -223,13 +223,25 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# 🔥 ESCUDO ANTI-F11 NATIVO: Captura el teclado de la PC y bloquea la acción por defecto del navegador
+# 🔥 EL PUENTE DE ENTER INTELIGENTE: Bloquea el F11 del escáner y fuerza el Enter automáticamente a los 100ms
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
         if (e.key === 'F11' || e.keyCode === 122) {
-            e.preventDefault();
-            console.log("F11 del escáner interceptado con éxito.");
+            e.preventDefault(); // Evitamos que cambie el tamaño de la pantalla
+            console.log("F11 frenado. Lanzando Enter puente automático...");
+            
+            // Esperamos 100 milisegundos a que el escáner termine de escribir los números
+            setTimeout(function() {
+                var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                if (inputs.length > 0) {
+                    // Buscamos el input del buscador, le disparamos el evento Enter nativo
+                    var eventoEnter = new KeyboardEvent('keydown', {
+                        bubbles: true, cancelable: true, key: 'Enter', keyCode: 13
+                    });
+                    inputs[0].dispatchEvent(eventoEnter);
+                }
+            }, 100);
         }
     });
 </script>
@@ -294,7 +306,6 @@ with tab0:
     raw_query = st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="scanner_input").strip()
     
     if raw_query:
-        # Limpieza por si el F11 se inyecta como texto, y normalización habitual
         query_norm = raw_query.replace("F11", "").replace(".", "").lstrip("0").lower()
         if query_norm:
             condicion_codigo = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
@@ -405,7 +416,7 @@ with tab1:
         except Exception as e: st.error(f"❌ Error: {e}")
 
 with tab2:
-    st.subheader("📊 Compartar Cambios de Precios")
+    st.subheader("📊 Comparar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
     file_b = st.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="file_b_up")
     if file_a and file_b:
