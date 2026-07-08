@@ -212,7 +212,7 @@ if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL
+# PESTAÑA 1: COLECTOR MÓVIL (Búsqueda cruzada Barcode + IdArticulo)
 # -------------------------------------------------------------------------
 with tab0:
     @st.cache_data(ttl=2)
@@ -226,21 +226,22 @@ with tab0:
                 primera_linea = lineas[0]
                 separador = ";" if primera_linea.count(";") > primera_linea.count(",") else ","
                 
-                # BLINDAJE CRÍTICO: QUOTE_NONE evita el bucle infinito con la comilla del Apps Script
                 reader = csv.reader(lineas, delimiter=separador, quoting=csv.QUOTE_NONE)
                 next(reader)
                 lista = []
                 for r in reader:
                     if not r or len(r) < 3: continue
                     
-                    # Limpiamos las comillas residuales que inyecta Google Sheets automáticamente
                     sku_raw = r[0].replace('"', '').replace("'", "").strip()
                     desc = fix_encoding(r[1].replace('"', '').strip())
                     precio_raw = r[2].replace('"', '').strip()
+                    # LEER COLUMNA 3 (IdArticulo interno del sistema)
+                    id_art = r[3].replace('"', '').replace("'", "").strip() if len(r) > 3 else ""
                     
                     if not sku_raw or not desc: continue
                     lista.append({
                         "SKU_Original": sku_raw, 
+                        "Id_Articulo": id_art,
                         "Descripción": desc, 
                         "Precio Crudo": precio_raw,
                         "Fecha": date.today().strftime("%d/%m/%y")
@@ -253,20 +254,22 @@ with tab0:
     
     if df_drive is None or df_drive.empty:
         st.error("⚠️ Error de lectura. Verificá que el Spreadsheet esté público.")
-        df_drive = pd.DataFrame(columns=["SKU_Original", "Descripción", "Precio Crudo", "Fecha"])
+        df_drive = pd.DataFrame(columns=["SKU_Original", "Id_Articulo", "Descripción", "Precio Crudo", "Fecha"])
     else:
         st.caption(f"🟢 Base de datos unificada en vivo. {len(df_drive)} artículos activos cargados.")
 
     raw_query = st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="scanner_input", placeholder="Hacé foco acá con el lector...").strip()
     
     if raw_query:
-        query_lower = raw_query.lower()
+        # Limpieza automática del punto para la comparación
+        query_clean = raw_query.replace(".", "").strip().lower()
         
-        # Búsqueda ultra-fiel de coincidencia exacta por SKU original
-        condicion_sku = (df_drive["SKU_Original"].str.lower() == query_lower)
+        # ⚡ BÚSQUEDA CRUZADA INTELIGENTE FIEL
+        # Compara el texto limpio contra el Código de Barras O contra el IdArticulo interno
+        condicion_sku = (df_drive["SKU_Original"].str.lower() == query_clean) | (df_drive["Id_Articulo"].str.lower() == query_clean)
         
-        # Búsqueda por palabras en la descripción por si escriben texto a mano
-        keywords = query_lower.split()
+        # Búsqueda tradicional por palabra clave en descripción
+        keywords = query_clean.split()
         condicion_desc = pd.Series(True, index=df_drive.index)
         for kw in keywords:
             condicion_desc &= df_drive["Descripción"].str.lower().str.contains(kw)
@@ -280,26 +283,29 @@ with tab0:
                 prod = resultados.iloc[0]
             else:
                 opciones_mostrar = resultados.copy()
-                opciones_mostrar["Etiqueta"] = opciones_mostrar["SKU_Original"] + " - " + opciones_mostrar["Descripción"]
+                opciones_mostrar["Etiqueta"] = opciones_mostrar["SKU_Original"] + " (ID: " + opciones_mostrar["Id_Articulo"] + ") - " + opciones_mostrar["Descripción"]
                 seleccionado = st.selectbox("Múltiples opciones encontradas:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
                 prod = df_drive.loc[seleccionado]
             
-            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO FIEL:** {prod['SKU_Original']}")
+            # Usamos preferentemente el IdInterno si se buscó por clave de sistema para armar el cartel
+            codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] and query_clean in prod['Id_Articulo'].lower() else prod['SKU_Original']
+            
+            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO INTERNO:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
             st.metric(label="💰 PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
             
             st.write("📐 **Mandar a Imprimir:**")
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("🔴 GIGANTE", key="btn_g_u", use_container_width=True):
-                    st.session_state.cola_impresion.append((prod["SKU_Original"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
+                    st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
                     st.toast("¡Agregado a Gigantes! 🔴")
             with c2:
                 if st.button("🔵 MEDIANO", key="btn_m_u", use_container_width=True):
-                    st.session_state.cola_impresion.append((prod["SKU_Original"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
+                    st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
                     st.toast("¡Agregado a Medianos! 🔵")
             with c3:
                 if st.button("🟢 CHICO", key="btn_c_u", use_container_width=True):
-                    st.session_state.cola_impresion.append((prod["SKU_Original"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
+                    st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
                     st.toast("¡Agregado a Chicos! 🟢")
 
     if st.session_state.cola_impresion:
@@ -333,7 +339,7 @@ with tab0:
                     pdf = generar_etiquetas_chicas(lc)
                     st.download_button("Bajar", data=pdf, file_name="movil_chicos.pdf", mime="application/pdf", use_container_width=True)
 
-# Pestaña 2: Carga masiva tradicional
+# Pestañas masivas e históricas intactas
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
@@ -370,7 +376,6 @@ with tab1:
                     st.download_button("📥 Bajar Chicas", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
         except Exception as e: st.error(f"❌ Error: {e}")
 
-# Pestaña 3: Comparador de cambios
 with tab2:
     st.subheader("📊 Comparar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
