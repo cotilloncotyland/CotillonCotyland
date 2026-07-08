@@ -212,7 +212,7 @@ if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL (Búsqueda cruzada Barcode + IdArticulo)
+# PESTAÑA 1: COLECTOR MÓVIL
 # -------------------------------------------------------------------------
 with tab0:
     @st.cache_data(ttl=2)
@@ -232,16 +232,15 @@ with tab0:
                 for r in reader:
                     if not r or len(r) < 3: continue
                     
-                    sku_raw = r[0].replace('"', '').replace("'", "").strip()
+                    sku_raw = r[0].replace('"', '').strip()
                     desc = fix_encoding(r[1].replace('"', '').strip())
                     precio_raw = r[2].replace('"', '').strip()
-                    # LEER COLUMNA 3 (IdArticulo interno del sistema)
-                    id_art = r[3].replace('"', '').replace("'", "").strip() if len(r) > 3 else ""
+                    id_art = r[3].replace('"', '').strip() if len(r) > 3 else ""
                     
                     if not sku_raw or not desc: continue
                     lista.append({
                         "SKU_Original": sku_raw, 
-                        "Id_Articulo": id_art,
+                        "Id_Articulo": id_art,  # Columna SKU del sistema
                         "Descripción": desc, 
                         "Precio Crudo": precio_raw,
                         "Fecha": date.today().strftime("%d/%m/%y")
@@ -261,15 +260,22 @@ with tab0:
     raw_query = st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="scanner_input", placeholder="Hacé foco acá con el lector...").strip()
     
     if raw_query:
-        # Limpieza automática del punto para la comparación
-        query_clean = raw_query.replace(".", "").strip().lower()
+        # Preparamos las variantes para asegurar la coincidencia exacta
+        query_as_is = raw_query.lower()                     # Ej: .10281612
+        query_no_dot = raw_query.replace(".", "").lower()   # Ej: 10281612
+        query_with_dot = f".{query_no_dot}"                 # Asegura el prefijo por si lo tipean sin punto
         
-        # ⚡ BÚSQUEDA CRUZADA INTELIGENTE FIEL
-        # Compara el texto limpio contra el Código de Barras O contra el IdArticulo interno
-        condicion_sku = (df_drive["SKU_Original"].str.lower() == query_clean) | (df_drive["Id_Articulo"].str.lower() == query_clean)
+        # ⚡ BUSCADOR TOLERANTE AL PUNTO DEL SKU
+        condicion_sku = (
+            (df_drive["SKU_Original"].str.lower() == query_as_is) | 
+            (df_drive["SKU_Original"].str.lower() == query_no_dot) |
+            (df_drive["Id_Articulo"].str.lower() == query_as_is) | 
+            (df_drive["Id_Articulo"].str.lower() == query_with_dot) |
+            (df_drive["Id_Articulo"].str.lower() == query_no_dot)
+        )
         
-        # Búsqueda tradicional por palabra clave en descripción
-        keywords = query_clean.split()
+        # Búsqueda tradicional por palabras en descripción
+        keywords = query_no_dot.split()
         condicion_desc = pd.Series(True, index=df_drive.index)
         for kw in keywords:
             condicion_desc &= df_drive["Descripción"].str.lower().str.contains(kw)
@@ -283,14 +289,14 @@ with tab0:
                 prod = resultados.iloc[0]
             else:
                 opciones_mostrar = resultados.copy()
-                opciones_mostrar["Etiqueta"] = opciones_mostrar["SKU_Original"] + " (ID: " + opciones_mostrar["Id_Articulo"] + ") - " + opciones_mostrar["Descripción"]
+                opciones_mostrar["Etiqueta"] = opciones_mostrar["Id_Articulo"] + " - " + opciones_mostrar["Descripción"]
                 seleccionado = st.selectbox("Múltiples opciones encontradas:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
                 prod = df_drive.loc[seleccionado]
             
-            # Usamos preferentemente el IdInterno si se buscó por clave de sistema para armar el cartel
-            codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] and query_clean in prod['Id_Articulo'].lower() else prod['SKU_Original']
+            # Limpiamos el punto estético únicamente en el renderizado del código corto del cartel
+            codigo_impresion = prod['Id_Articulo'].replace(".", "") if prod['Id_Articulo'] else prod['SKU_Original']
             
-            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO INTERNO:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
+            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **SKU SISTEMA:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
             st.metric(label="💰 PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
             
             st.write("📐 **Mandar a Imprimir:**")
@@ -377,7 +383,7 @@ with tab1:
         except Exception as e: st.error(f"❌ Error: {e}")
 
 with tab2:
-    st.subheader("📊 Comparar Cambios de Precios")
+    st.subheader("📊 Compartar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
     file_b = st.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="file_b_up")
     if file_a and file_b:
