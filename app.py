@@ -56,24 +56,24 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (JavaScript en Iframe)
+# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (JavaScript Corrección de Permisos)
 # =========================================================================
 def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
-    """Genera un botón que dispara el cuadro de impresión nativo sin descargar"""
+    """Genera un botón real que dispara el cuadro de impresión sin bloqueos de seguridad"""
     base64_pdf = base64.b64encode(bytes_pdf).decode('utf-8')
     
     componente_html = f"""
     <script>
-        function imprimirPDF() {{
-            var iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = "data:application/pdf;base64,{base64_pdf}";
-            document.body.appendChild(iframe);
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
+        function ejecutarImpresion() {{
+            var pdfWindow = window.open("");
+            pdfWindow.document.write("<iframe width='100%' height='100%' src='data:application/pdf;base64,{base64_pdf}'></iframe>");
+            setTimeout(function() {{
+                pdfWindow.focus();
+                pdfWindow.print();
+            }}, 250);
         }}
     </script>
-    <button onclick="imprimirPDF()" style="
+    <button onclick="ejecutarImpresion()" style="
         width: 100%;
         height: 45px;
         background-color: #FF9800;
@@ -87,7 +87,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
         margin-top: 5px;
     ">🖨️ Mandar a Imprimir Directo</button>
     """
-    st.components.v1.html(componente_html, height=60)
+    st.components.v1.html(componente_html, height=55)
 
 # =========================================================================
 # MOTORES DE GENERACIÓN DE PDF
@@ -223,13 +223,12 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# 🔥 CONTROLADOR ULTRA-VELOZ JS: Frena el F11 e inyecta el cambio nativo
+# Interceptador F11 de PC invariable y blindado
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
         if (e.key === 'F11' || e.keyCode === 122) {
             e.preventDefault(); 
-            
             setTimeout(function() {
                 var inputBuscador = window.parent.document.querySelector('input[type="text"]');
                 if (inputBuscador) {
@@ -258,7 +257,7 @@ st.html("""
 st.title("🎈 Cotyland - Panel Multiplataforma")
 tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
-# Inicializadores de sesión de memoria de Streamlit
+# 🔥 DECLARACIÓN RESISTENTE DE VARIABLES DE MEMORIA DE SESIÓN
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 if "producto_actual" not in st.session_state:
@@ -302,9 +301,9 @@ with tab0:
         st.error("⚠️ Error cargando la base de datos.")
         df_drive = pd.DataFrame()
     else:
-        st.caption(f"🟢 Base de datos lista: {len(df_drive)} artículos activos.")
+        st.caption(f"🟢 Base de datos unificada: {len(df_drive)} artículos activos.")
 
-    # 📌 Lógica de control y autolimpieza por valor de sesión de Streamlit
+    # Lógica de callback modificada para asegurar persistencia cruzada
     def procesar_escaneo():
         query_cruda = st.session_state.sk_input.strip()
         if query_cruda:
@@ -321,13 +320,14 @@ with tab0:
                     st.session_state.producto_actual = resultados.iloc[0].to_dict()
                 else:
                     st.session_state.producto_actual = {"error": f"❌ No encontrado: '{query_cruda}'"}
-        # 🔥 EL REFINAMIENTO DE RENDIMIENTO: Vaciamos la barra de texto inmediatamente tras el procesamiento
+        
+        # 🔥 AUTOLIMPIEZA RADICAL: Vaciamos la barra de texto pero mantendremos st.session_state.cola_impresion intacto
         st.session_state.sk_input = ""
 
-    # Input vinculado al callback de procesamiento masivo instantáneo
-    st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="sk_input", on_change=procesar_escaneo, placeholder="Cursor acá para escaneo continuo...")
+    # Caja de texto limpia vinculada al ciclo de refresco masivo continuo
+    st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="sk_input", on_change=procesar_escaneo, placeholder="Hacé foco acá para escanear a ráfaga...")
 
-    # Renderizado persistente de la información en pantalla
+    # Renderizado persistente del producto activo en pantalla
     if st.session_state.producto_actual:
         prod = st.session_state.producto_actual
         if "error" in prod:
@@ -335,7 +335,6 @@ with tab0:
         else:
             codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
             
-            # Despliega producto y precio actuales
             st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **SKU SISTEMA:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
             st.metric(label="💰 PRECIO", value=format_price_arg(prod["Precio Crudo"]))
             
@@ -343,21 +342,28 @@ with tab0:
             with c1:
                 if st.button("🔴 GIGANTE", use_container_width=True):
                     st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
-                    st.toast("¡Agregado!")
+                    st.toast("¡Agregado a Gigantes!")
             with c2:
                 if st.button("🔵 MEDIANO", use_container_width=True):
                     st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
-                    st.toast("¡Agregado!")
+                    st.toast("¡Agregado a Medianos!")
             with c3:
                 if st.button("🟢 CHICO", use_container_width=True):
                     st.session_state.cola_impresion.append((codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
-                    st.toast("¡Agregado!")
+                    st.toast("¡Agregado a Chicos!")
 
+    # El bloque de renderizado del Carrito ahora es 100% inmune a la autolimpia de la barra superior
     if st.session_state.cola_impresion:
         st.write("---")
+        st.subheader("📋 Tu Carrito de Impresión")
+        
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
-        edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True)
+        
+        # El data_editor actualiza directamente la cola de impresión viva
+        edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True, key="editor_carrito")
+        
+        # Mantenemos sincronizada la sesión con las filas marcadas
         st.session_state.cola_impresion = [(row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in edited_cola[edited_cola["Quitar ❌"] == True].iterrows()]
         
         if st.session_state.cola_impresion:
@@ -365,26 +371,26 @@ with tab0:
             lm = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Mediano"]
             lc = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Chico"]
             
-            st.markdown("### 📥 Descargar o Imprimir Directo:")
+            st.markdown("### 📥 Descargar o Imprimir Directo Masivo:")
             cg, cm, cc = st.columns(3)
             with cg:
                 if lg:
                     st.write("**🔴 GIGANTES**")
                     pdf_g = generar_carteles_gigantes(lg)
-                    st.download_button("⬇️ Descargar", data=pdf_g, file_name="gigantes.pdf", mime="application/pdf", use_container_width=True, key="dl_g")
-                    embeber_e_imprimir_pdf(pdf_g, "print_g")
+                    st.download_button("⬇️ Descargar", data=pdf_g, file_name="gigantes.pdf", mime="application/pdf", use_container_width=True, key="btn_dl_g")
+                    embeber_e_imprimir_pdf(pdf_g, "btn_pr_g")
             with cm:
                 if lm:
                     st.write("**🔵 MEDIANOS**")
                     pdf_m = generar_precios_medianos(lm)
-                    st.download_button("⬇️ Descargar", data=pdf_m, file_name="medianos.pdf", mime="application/pdf", use_container_width=True, key="dl_m")
-                    embeber_e_imprimir_pdf(pdf_m, "print_m")
+                    st.download_button("⬇️ Descargar", data=pdf_m, file_name="medianos.pdf", mime="application/pdf", use_container_width=True, key="btn_dl_m")
+                    embeber_e_imprimir_pdf(pdf_m, "btn_pr_m")
             with cc:
                 if lc:
                     st.write("**🟢 CHICOS**")
                     pdf_c = generar_etiquetas_chicas(lc)
-                    st.download_button("⬇️ Descargar", data=pdf_c, file_name="chicos.pdf", mime="application/pdf", use_container_width=True, key="dl_c")
-                    embeber_e_imprimir_pdf(pdf_c, "print_c")
+                    st.download_button("⬇️ Descargar", data=pdf_c, file_name="chicos.pdf", mime="application/pdf", use_container_width=True, key="btn_dl_c")
+                    embeber_e_imprimir_pdf(pdf_c, "btn_pr_c")
 
 # Pestañas masivas e históricas intactas
 with tab1:
