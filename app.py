@@ -56,19 +56,36 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA
+# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (Corregida sin bloqueos)
 # =========================================================================
 def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
+    """Genera un botón que abre el PDF limpio en una pestaña nueva y lanza la impresión en el acto"""
     base64_pdf = base64.b64encode(bytes_pdf).decode('utf-8')
+    
     componente_html = f"""
     <script>
         function ejecutarImpresion() {{
-            var pdfWindow = window.open("");
-            pdfWindow.document.write("<iframe width='100%' height='100%' src='data:application/pdf;base64,{base64_pdf}'></iframe>");
-            setTimeout(function() {{
-                pdfWindow.focus();
-                pdfWindow.print();
-            }}, 250);
+            // Convertimos el base64 a un objeto Blob puro de PDF para evitar bloqueos del navegador
+            var byteCharacters = atob("{base64_pdf}");
+            var byteNumbers = new Array(bytesCharacters.length);
+            for (var i = 0; i < bytesCharacters.length; i++) {{
+                byteNumbers[i] = bytesCharacters.charCodeAt(i);
+            }}
+            var byteArray = new Uint8Array(byteNumbers);
+            var blob = new Blob([byteArray], {{type: 'application/pdf'}});
+            var fileURL = URL.createObjectURL(blob);
+            
+            // Abrimos la ventana limpia con el archivo fiel e imprimimos
+            var win = window.open(file_url);
+            if (win) {{
+                win.document.write("<iframe src='" + fileURL + "' width='100%' height='100%' style='border:none;'></iframe>");
+                setTimeout(function() {{
+                    win.focus();
+                    win.print();
+                }}, 300);
+            }} else {{
+                alert("❌ Por favor habilitá las ventanas emergentes (pop-ups) en tu navegador para imprimir directo.");
+            }}
         }}
     </script>
     <button onclick="ejecutarImpresion()" style="
@@ -85,7 +102,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
         margin-top: 5px;
     ">🖨️ Mandar a Imprimir Directo</button>
     """
-    st.components.v1.html(componente_html, height=55)
+    st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
 # MOTORES DE GENERACIÓN DE PDF
@@ -221,7 +238,7 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# 🔥 EL ESCUDO INTELLIGENT DE ENTRADA: Ataja F11 y fuerza cambio nativo sin latencias
+# Interceptador F11 de PC invariable y blindado
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
@@ -259,7 +276,6 @@ if "ultimo_producto" not in st.session_state:
     st.session_state.ultimo_producto = ""
 
 with tab0:
-    # ⚡ CACHÉ INFINITO EN RAM: Descarga una sola vez y no frena el flujo
     @st.cache_data
     def descargar_base_estatica(url):
         try:
@@ -298,11 +314,10 @@ with tab0:
     else:
         st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché RAM.")
 
-    # 🎛️ CONFIGURACIÓN DE TANDA AUTOMÁTICA
+    # Configuración de tanda automática
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
     tamanio_elegido = st.radio("Seleccioná qué tamaño querés que se guarde automáticamente al escanear:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
 
-    # Lógica de procesamiento directo e inyección instantánea en el Carrito
     def procesar_colector_veloz():
         query_cruda = st.session_state.colector_input.strip()
         if query_cruda:
@@ -314,27 +329,24 @@ with tab0:
                 if not resultados.empty:
                     prod = resultados.iloc[0]
                     codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
-                    tipo_str = tamanio_elegido.split(" ")[1] # Extrae Chico, Mediano o Gigante
+                    tipo_str = tamanio_elegido.split(" ")[1]
                     
-                    # 🔥 INYECCIÓN INMEDIATA EN LA COLA CORRELATIVA: No se pierde jamás
                     st.session_state.cola_impresion.append((
                         codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], tipo_str
                     ))
                     st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']} ({tamanio_elegido}) - {format_price_arg(prod['Precio Crudo'])}"
                 else:
-                    st.session_state.ultimo_producto = f"❌ Código no encontrado en base de datos: '{query_cruda}'"
+                    st.session_state.ultimo_producto = f"❌ Código no encontrado: '{query_cruda}'"
         
-        # Saneamiento de barra de texto inmediato para habilitar el próximo tiro del lector
         st.session_state.colector_input = ""
 
-    # Buscador en modo ráfaga continua
+    # Buscador continuo
     st.text_input("🔎 ESCANEÁ ACÁ (MODO CORRELATIVO CONSTANTE):", key="colector_input", on_change=procesar_colector_veloz, placeholder="Hacé foco acá y pasá los códigos de corrido...")
 
-    # Notificación flash de control en pantalla del último artículo procesado
     if st.session_state.ultimo_producto:
         st.info(st.session_state.ultimo_producto)
 
-    # RENDIMIENTO DEL CARRITO PERSISTENTE UNIFICADO
+    # Renderizado del carrito
     if st.session_state.cola_impresion:
         st.write("---")
         st.subheader("📋 Lista Correlativa de Impresión Actual")
@@ -342,7 +354,6 @@ with tab0:
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
         
-        # El data editor permite remover líneas erróneas sin romper el flujo
         edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True, key="tabla_viva")
         st.session_state.cola_impresion = [(row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in edited_cola[edited_cola["Quitar ❌"] == True].iterrows()]
         
@@ -372,7 +383,7 @@ with tab0:
                     st.download_button("⬇️ Descargar", data=pdf_c, file_name="chicos.pdf", mime="application/pdf", use_container_width=True, key="f_c")
                     embeber_e_imprimir_pdf(pdf_c, "p_c")
 
-# Pestañas históricas intactas
+# Pestañas complementarias intactas
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
