@@ -10,9 +10,8 @@ from reportlab.lib.units import cm, mm
 from reportlab.pdfbase import pdfmetrics
 
 # =========================================================================
-# ID DE TU CARPETA / ARCHIVO DE DRIVE (CONFIGURADO)
+# ID DE TU ARCHIVO MAESTRO EN DRIVE (Para la herramienta móvil)
 # =========================================================================
-# Reemplazá este ID con el ID real de tu archivo compartido en Drive:
 ID_DRIVE = "1Jo4IsUcisgZJs0Aep9otQOCMNIHyJiXB" 
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{ID_DRIVE}/export?format=csv"
 
@@ -35,7 +34,10 @@ def fix_encoding(text: str) -> str:
 
 def format_price_arg(price_str: str) -> str:
     if not price_str: return ""
-    s = str(price_str).replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
+    s = str(price_str).replace("$", "").replace(" ", "")
+    # Detectar si el formato es del reporte de stock o del buscador
+    if ";" in s or "," in s:
+        s = s.replace(".", "").replace(",", ".")
     try:
         value = float(s)
     except ValueError:
@@ -192,7 +194,7 @@ def generar_etiquetas_chicas(products_list):
     return buffer
 
 # =========================================================================
-# INTERFAZ DE USUARIO CONFIGURADA
+# INTERFAZ DE USUARIO CON LAS 3 PESTAÑAS INDEPENDIENTES
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 st.title("🎈 Cotyland - Panel Multiplataforma")
@@ -205,14 +207,15 @@ st.html("""
 </style>
 """)
 
+# NUEVA ADICIÓN: Las tres pestañas conviviendo sin romperse entre sí
 tab1, tab2, tab3 = st.tabs(["📱 Buscador Móvil (Drive)", "🖨️ Carga Masiva (CSV)", "📊 Comparador de Precios"])
 
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
-# =========================================================================
-# PESTAÑA 1: COLECTOR MÓVIL EN TIEMPO REAL CON PRE-FILTRADO Y AUTO-MUESTRA
-# =========================================================================
+# -------------------------------------------------------------------------
+# PESTAÑA 1: COLECTOR MÓVIL (Usa punto y coma ';' del archivo maestro)
+# -------------------------------------------------------------------------
 with tab1:
     st.subheader("📱 Colector de Etiquetas desde el Celular")
     
@@ -222,163 +225,119 @@ with tab1:
             res = requests.get(url)
             if res.status_code == 200:
                 content = res.content.decode("latin1")
-                # Procesador ultra seguro línea por línea usando punto y coma (;)
                 reader = csv.reader(content.splitlines(), delimiter=";")
-                next(reader) # Saltear cabecera
+                next(reader)
                 lista = []
                 for r in reader:
                     if not r or len(r) < 3: continue
                     precio_raw = r[2].strip().replace(".", "").replace(",", ".")
                     try:
                         precio_f = float(precio_raw)
-                        # REGLA SOLICITADA: Descartar estrictamente los precios en cero
-                        if precio_f > 0:
+                        if precio_f > 0: # Filtro de precios en cero
                             lista.append({
                                 "SKU": r[0].strip(),
                                 "Descripción": fix_encoding(r[1].strip().strip('"')),
                                 "Precio Crudo": r[2].strip(),
                                 "Fecha": date.today().strftime("%d/%m/%y")
                             })
-                    except:
-                        continue
+                    except: continue
                 return pd.DataFrame(lista)
-        except:
-            return None
+        except: return None
         return None
 
     df_drive = descargar_base_drive(URL_DRIVE)
-    
     if df_drive is None:
-        st.error("⚠️ Error leyendo desde Drive. Comprobá que la carpeta esté compartida como pública.")
+        st.error("⚠️ Error leyendo desde Drive. Comprobá que el archivo sea público.")
         df_drive = pd.DataFrame(columns=["SKU", "Descripción", "Precio Crudo", "Fecha"])
     else:
-        st.caption(f"🟢 Conectado a Drive. Base de datos optimizada: {len(df_drive)} artículos activos con precio.")
+        st.caption(f"🟢 Conectado a Drive. Base de datos: {len(df_drive)} artículos activos.")
 
-    # Entrada de búsqueda única inteligente (Súper Combinada)
-    query = st.text_input("🔎 Buscá por Código (completo/parcial) o palabras de la Descripción:", key="scanner_input", placeholder="Ej: caja 260 o punto sku...").strip().lower()
+    query = st.text_input("🔎 Buscá por Código o palabras de la Descripción:", key="scanner_input", placeholder="Ej: galletas...").strip().lower()
     
     if query:
-        # Partir los términos por espacios para buscar "Caja" y "260" al mismo tiempo
         keywords = query.split()
         condicion = pd.Series(True, index=df_drive.index)
-        
         for kw in keywords:
             condicion &= (df_drive["SKU"].str.lower().str.contains(kw)) | (df_drive["Descripción"].str.lower().str.contains(kw))
             
         resultados = df_drive[condicion]
         
         if resultados.empty:
-            st.warning("❌ No se encontró ningún artículo que coincida.")
+            st.warning("❌ No se encontró ningún artículo.")
         elif len(resultados) == 1:
-            # Opción única: Desplegar directo la ficha técnica
             prod = resultados.iloc[0]
             st.success(f"📦 Producto Seleccionado: {prod['Descripción']}")
             st.metric(label="Precio de Venta", value=format_price_arg(prod["Precio Crudo"]))
-            st.text(f"SKU: {prod['SKU']}   |   Fecha: {prod['Fecha']}")
             
-            st.write("📐 **¿A qué tamaño de cartel lo querés mandar?**")
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("🔴 Gigante", key="btn_g_u"):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
-                    st.toast("Agregado como Gigante 🔴")
+                    st.toast("Agregado a Gigantes 🔴")
             with c2:
                 if st.button("🔵 Mediano", key="btn_m_u"):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
-                    st.toast("Agregado como Mediano 🔵")
+                    st.toast("Agregado a Medianos 🔵")
             with c3:
                 if st.button("🟢 Chico", key="btn_c_u"):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
-                    st.toast("Agregado como Chico 🟢")
+                    st.toast("Agregado a Chicos 🟢")
         else:
-            # Múltiples opciones: Mostrar planilla interactiva para tocar la correcta
-            st.info(f"Se encontraron {len(resultados)} opciones. Tocá el círculo a la izquierda de la correcta:")
-            
-            # Formatear visualmente para el selector móvil
+            st.info(f"Se encontraron {len(resultados)} opciones:")
             resultados_mostrar = resultados.copy()
             resultados_mostrar["Mostrar"] = resultados_mostrar["SKU"] + " - " + resultados_mostrar["Descripción"] + " (" + resultados_mostrar["Precio Crudo"] + ")"
             
-            seleccionado = st.radio(
-                "Resultados encontrados:",
-                options=resultados_mostrar.index,
-                format_func=lambda idx: resultados_mostrar.loc[idx, "Mostrar"],
-                label_visibility="collapsed"
-            )
-            
+            seleccionado = st.radio("Resultados:", options=resultados_mostrar.index, format_func=lambda idx: resultados_mostrar.loc[idx, "Mostrar"], label_visibility="collapsed")
             prod = df_drive.loc[seleccionado]
-            st.markdown("---")
-            st.success(f"📦 Producto Seleccionado: {prod['Descripción']}")
+            st.success(f"📦 Seleccionado: {prod['Descripción']}")
             st.metric(label="Precio de Venta", value=format_price_arg(prod["Precio Crudo"]))
             
-            st.write("📐 **¿A qué tamaño de cartel lo querés mandar?**")
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("🔴 Mandar a Gigante", key="btn_g_m_sel"):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
-                    st.toast("Agregado como Gigante 🔴")
+                    st.toast("Agregado a Gigantes 🔴")
             with c2:
                 if st.button("🔵 Mandar a Mediano", key="btn_m_m_sel"):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
-                    st.toast("Agregado como Mediano 🔵")
+                    st.toast("Agregado a Medianos 🔵")
             with c3:
                 if st.button("🟢 Mandar a Chico", key="btn_c_m_sel"):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
-                    st.toast("Agregado como Chico 🟢")
+                    st.toast("Agregado a Chicos 🟢")
 
-    # Mostrar la canasta/cola de lo que va juntando con el teléfono
     if st.session_state.cola_impresion:
         st.write("---")
-        st.subheader("📋 Artículos Juntados en el Recorrido")
-        
+        st.subheader("📋 Artículos Juntados")
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
+        edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True)
         
-        edited_cola = st.data_editor(
-            df_cola,
-            column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)},
-            disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"],
-            hide_index=True,
-            use_container_width=True
-        )
-        
-        # Actualizar la cola si destildó algo (acción de cerrar)
         df_limpio = edited_cola[edited_cola["Quitar ❌"] == True]
-        st.session_state.cola_impresion = [
-            (row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) 
-            for _, row in df_limpio.iterrows()
-        ]
+        st.session_state.cola_impresion = [(row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in df_limpio.iterrows()]
         
-        if st.button("🗑️ Vaciar canasta por completo", use_container_width=True):
-            st.session_state.cola_impresion = []
-            st.rerun()
+        if st.session_state.cola_impresion:
+            lg = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Gigante"]
+            lm = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Mediano"]
+            lc = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Chico"]
             
-        st.write("---")
-        st.subheader("🖨️ Finalizar y Armar PDFs")
-        
-        lg = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Gigante"]
-        lm = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Mediano"]
-        lc = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Chico"]
-        
-        cg, cm, cc = st.columns(3)
-        with cg:
-            if lg:
-                if st.button(f"📥 PDF {len(lg)} Gigantes", key="dl_g"):
+            cg, cm, cc = st.columns(3)
+            with cg:
+                if lg and st.button(f"📥 PDF {len(lg)} Gigantes", key="dl_g"):
                     pdf = generar_carteles_gigantes(lg)
                     st.download_button("Descargar", data=pdf, file_name="movil_gigantes.pdf", mime="application/pdf", use_container_width=True)
-        with cm:
-            if lm:
-                if st.button(f"📥 PDF {len(lm)} Medianos", key="dl_m"):
+            with cm:
+                if lm and st.button(f"📥 PDF {len(lm)} Medianos", key="dl_m"):
                     pdf = generar_precios_medianos(lm)
                     st.download_button("Descargar", data=pdf, file_name="movil_medianos.pdf", mime="application/pdf", use_container_width=True)
-        with cc:
-            if lc:
-                if st.button(f"📥 PDF {len(lc)} Chicos", key="dl_c"):
+            with cc:
+                if lc and st.button(f"📥 PDF {len(lc)} Chicos", key="dl_c"):
                     pdf = generar_etiquetas_chicas(lc)
                     st.download_button("Descargar", data=pdf, file_name="movil_chicos.pdf", mime="application/pdf", use_container_width=True)
 
-# =========================================================================
-# PESTAÑA 2: CARGA TRADICIONAL COMPLETA POR CSV
-# =========================================================================
+# -------------------------------------------------------------------------
+# PESTAÑA 2: CARGA MASIVA DE AYER (Usa comas ',' - Intacta)
+# -------------------------------------------------------------------------
 with tab2:
     st.subheader("Subir archivo completo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
@@ -386,15 +345,15 @@ with tab2:
         try:
             bytes_data = uploaded_file.getvalue()
             content = bytes_data.decode("latin1")
-            reader = csv.reader(content.splitlines(), delimiter=";")
+            reader = csv.reader(content.splitlines()) # Se mantiene igual con comas
             parsed_products = []
             for r in reader:
-                if not r or r[0].strip() == "Codigo_Barra": continue
+                if not r: continue
                 r_ext = list(r) + [""] * (5 - len(r))
                 parsed_products.append({
-                    "Imprimir": True, "SKU": r_ext[0].strip(),
+                    "Imprimir": True, "SKU": r_ext[2].strip(),
                     "Descripción": fix_encoding(r_ext[1].strip().strip('"')),
-                    "Precio Crudo": r_ext[2].strip(), "Fecha": date.today().strftime("%d/%m/%y")
+                    "Precio Crudo": r_ext[0].strip(), "Fecha": r_ext[4].strip()
                 })
             df_products = pd.DataFrame(parsed_products)
             st.success(f"✅ ¡Archivo correcto! {len(df_products)} productos detectados.")
@@ -417,12 +376,11 @@ with tab2:
                     if st.button("Descargar PDF Chico", key="btn_c_csv"):
                         pdf = generar_etiquetas_chicas(lista_final)
                         st.download_button("📥 Bajar Chicas", data=pdf, file_name="masivo_chicas.pdf", mime="application/pdf", use_container_width=True)
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
+        except Exception as e: st.error(f"❌ Error: {e}")
 
-# =========================================================================
-# PESTAÑA 3: COMPARADOR DE PRECIOS
-# =========================================================================
+# -------------------------------------------------------------------------
+# PESTAÑA 3: COMPARADOR DE PRECIOS DE AYER (Usa comas ',' - Intacta)
+# -------------------------------------------------------------------------
 with tab3:
     st.subheader("📊 Comparar Cambios de Precios")
     col_old, col_new = st.columns(2)
@@ -437,8 +395,8 @@ with tab3:
                     try: return float(s)
                     except: return None
                 def cargar_df_crudo(p):
-                    df = pd.read_csv(p, sep=";", header=None, engine="python", dtype=str, skiprows=1)
-                    df_res = pd.DataFrame({"SKU": df[0], "Descripcion": df[1], "Precio": df[2]})
+                    df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str) # Se mantiene con comas
+                    df_res = pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
                 df_a, df_b = cargar_df_crudo(file_a), cargar_df_crudo(file_b)
