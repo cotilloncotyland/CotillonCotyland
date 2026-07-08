@@ -10,9 +10,9 @@ from reportlab.lib.units import cm, mm
 from reportlab.pdfbase import pdfmetrics
 
 # =========================================================================
-# ID DE TU ARCHIVO MAESTRO EN DRIVE (Para la herramienta móvil)
+# ID DE TU ARCHIVO MAESTRO EN DRIVE (Configurado con tu CSV compartido)
 # =========================================================================
-ID_DRIVE = "1Jo4IsUcisgZJs0Aep9otQOCMNIHyJiXB" 
+ID_DRIVE = "1tkAsYaZdVRSrSd4prWHrMSqNLw3-MgMR" 
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{ID_DRIVE}/export?format=csv"
 
 # =========================================================================
@@ -29,17 +29,15 @@ def fix_encoding(text: str) -> str:
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
-    try:
-        return text.encode("latin1").decode("utf-8")
-    except Exception:
-        return text
+    try: return text.encode("latin1").decode("utf-8")
+    except Exception: return text
 
 def format_price_arg(price_str: str) -> str:
     if not price_str: return ""
     s = str(price_str).replace("$", "").replace(" ", "")
-    # Si viene con comas del reporte de Drive, hacemos ajuste interno sin tocar la visual de ayer
+    # Ajuste interno de conversión si viene del Drive con comas, sin alterar lo masivo de ayer
     if "," in s and "." not in s:
-        pass 
+        s = s.replace(".", "").replace(",", ".")
     try: value = float(s)
     except ValueError: return price_str.strip()
     us = f"{value:,.2f}"
@@ -52,8 +50,7 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     current = words[0]
     for w in words[1:]:
         test = current + " " + w
-        if pdfmetrics.stringWidth(test, font_name, font_size) <= max_width:
-            current = test
+        if pdfmetrics.stringWidth(test, font_name, font_size) <= max_width: current = test
         else:
             lines.append(current)
             current = w
@@ -61,70 +58,18 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# MOTOR PDF OPTIMIZADO
+# MOTORES DE GENERACIÓN DE PDF
 # =========================================================================
-def generar_precios_medianos(data_rows):
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    page_width, page_height = A4
-    lbl_w, lbl_h = 10 * cm, 7 * cm
-    margin_x, margin_y = (page_width - (2 * lbl_w)) / 2.0, (page_height - (4 * lbl_h)) / 2.0
-
-    col, row = 0, 0
-    for sku, name, price, date_str in data_rows:
-        x = margin_x + col * lbl_w
-        y = page_height - margin_y - (row + 1) * lbl_h
-        c.setLineWidth(1)
-        c.rect(x, y, lbl_w, lbl_h)
-        
-        inner_w = lbl_w - 0.6*cm
-        desc_top = y + lbl_h - 0.3*cm
-        
-        desc_text = fix_encoding(name).strip()
-        if desc_text:
-            f_size = 18
-            while f_size >= 7:
-                lines = wrap_text_to_width(desc_text, "Helvetica-Bold", f_size, inner_w)
-                if len(lines) * f_size * 1.15 <= (lbl_h * 0.35): break
-                f_size -= 1
-            c.setFont("Helvetica-Bold", f_size)
-            curr_y = desc_top - f_size
-            for line in lines:
-                c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
-                curr_y -= f_size * 1.15
-
-        price_text = format_price_arg(price).strip()
-        if price_text:
-            f_size = 95
-            while f_size > 14:
-                if pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size) <= inner_w: break
-                f_size -= 1
-            c.setFont("Helvetica-Bold", f_size)
-            c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 1.1*cm, price_text)
-
-        footer = f"{str(sku).strip()}   {str(date_str).strip()}"
-        c.setFont("Helvetica", 10)
-        c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 0.3*cm, footer)
-
-        col += 1
-        if col >= 2: col, row = 0, row + 1
-        if row >= 4: c.showPage(); row, col = 0, 0
-    c.save()
-    buffer.seek(0)
-    return buffer
-
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     lbl_w, lbl_h = A4[0] - 10*mm, (A4[1] - 15*mm) / 2
     label_date = date.today().strftime("%d/%m/%Y")
-
     for i, (sku, name, price, date_str) in enumerate(products_list):
         pos = i % 2
         if i != 0 and pos == 0: c.showPage()
         x, y = 5*mm, ((A4[1] - 5*mm - lbl_h) if pos == 0 else 5*mm)
         c.rect(x, y, lbl_w, lbl_h)
-        
         price_txt = format_price_arg(price).strip()
         f_size = 125
         while f_size > 20:
@@ -132,7 +77,6 @@ def generar_carteles_gigantes(products_list):
             f_size -= 2
         c.setFont("Helvetica-Bold", f_size)
         c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/2, price_txt)
-
         c.setFont("Helvetica-Bold", 24)
         desc_clean = fix_encoding(name).strip()
         words = desc_clean.split()
@@ -145,15 +89,57 @@ def generar_carteles_gigantes(products_list):
                 curr = w
                 if len(lines) == 1: break
         if curr and len(lines) < 2: lines.append(curr)
-        
         ny = y + lbl_h - 45
         for line in lines:
             c.drawCentredString(x + lbl_w/2, ny, line)
             ny -= 29
-            
         final_date = date_str if date_str else label_date
         c.setFont("Helvetica-Bold", 12)
         c.drawCentredString(x + lbl_w/2, y + 14, f"{sku}  {final_date}")
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+def generar_precios_medianos(data_rows):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    page_width, page_height = A4
+    lbl_w, lbl_h = 10 * cm, 7 * cm
+    margin_x, margin_y = (page_width - (2 * lbl_w)) / 2.0, (page_height - (4 * lbl_h)) / 2.0
+    col, row = 0, 0
+    for sku, name, price, date_str in data_rows:
+        x = margin_x + col * lbl_w
+        y = page_height - margin_y - (row + 1) * lbl_h
+        c.setLineWidth(1)
+        c.rect(x, y, lbl_w, lbl_h)
+        inner_w = lbl_w - 0.6*cm
+        desc_top = y + lbl_h - 0.3*cm
+        desc_text = fix_encoding(name).strip()
+        if desc_text:
+            f_size = 18
+            while f_size >= 7:
+                lines = wrap_text_to_width(desc_text, "Helvetica-Bold", f_size, inner_w)
+                if len(lines) * f_size * 1.15 <= (lbl_h * 0.35): break
+                f_size -= 1
+            c.setFont("Helvetica-Bold", f_size)
+            curr_y = desc_top - f_size
+            for line in lines:
+                c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
+                curr_y -= f_size * 1.15
+        price_text = format_price_arg(price).strip()
+        if price_text:
+            f_size = 95
+            while f_size > 14:
+                if pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size) <= inner_w: break
+                f_size -= 1
+            c.setFont("Helvetica-Bold", f_size)
+            c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 1.1*cm, price_text)
+        footer = f"{str(sku).strip()}   {str(date_str).strip()}"
+        c.setFont("Helvetica", 10)
+        c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 0.3*cm, footer)
+        col += 1
+        if col >= 2: col, row = 0, row + 1
+        if row >= 4: c.showPage(); row, col = 0, 0
     c.save()
     buffer.seek(0)
     return buffer
@@ -163,21 +149,17 @@ def generar_etiquetas_chicas(products_list):
     w_page, h_page = landscape(A4)
     c = canvas.Canvas(buffer, pagesize=(w_page, h_page))
     label_date = date.today().strftime("%d/%m/%y")
-
     lbl_w, lbl_h = 70*mm, 35*mm
     cols, rows = int((w_page - 10*mm + 2*mm) // (lbl_w + 2*mm)), int((h_page - 10*mm + 2*mm) // (lbl_h + 2*mm))
     per_page = cols * rows
-
     for i, (sku, name, price, date_str) in enumerate(products_list):
         if i > 0 and i % per_page == 0: c.showPage()
         pos = i % per_page
         r, col = pos // cols, pos % cols
         x = 5*mm + col * (lbl_w + 2*mm)
         y = h_page - 5*mm - ((r + 1) * (lbl_h + 2*mm)) + 2*mm
-
         c.setLineWidth(0.5)
         c.rect(x, y, lbl_w, lbl_h)
-        
         price_txt = format_price_arg(price).strip()
         f_size_p = 34
         while f_size_p > 12:
@@ -185,7 +167,6 @@ def generar_etiquetas_chicas(products_list):
             f_size_p -= 1
         c.setFont("Helvetica-Bold", f_size_p)
         c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.22), price_txt)
-
         c.setFont("Helvetica-Bold", 9)
         desc_clean = fix_encoding(name).strip()
         words = desc_clean.split()
@@ -198,13 +179,11 @@ def generar_etiquetas_chicas(products_list):
                 curr = w
                 if len(lines) == 4: break
         if curr and len(lines) < 4: lines.append(curr)
-
         ny = y + lbl_h - 5*mm
         for line in lines:
             if ny < (y + (lbl_h * 0.22) + 16): break
             c.drawCentredString(x + lbl_w/2, ny, line)
             ny -= 11
-            
         final_date = date_str if date_str else label_date
         c.setFont("Helvetica", 8)
         c.drawCentredString(x + lbl_w/2, y + 2*mm, f"{sku} - {final_date}")
@@ -213,7 +192,7 @@ def generar_etiquetas_chicas(products_list):
     return buffer
 
 # =========================================================================
-# INTERFAZ DE USUARIO CON COLA INDEPENDIENTE
+# INTERFAZ DE USUARIO CON TABS INDEPENDIENTES
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 st.title("🎈 Cotyland - Panel Multiplataforma")
@@ -226,14 +205,13 @@ st.html("""
 </style>
 """)
 
-# INTACTO: Se suman las 3 opciones independientes
 tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil (Drive)", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# NUEVA FUNCIÓN: PESTAÑA MÓVIL EN TIEMPO REAL (GOOGLE DRIVE)
+# PESTAÑA 1: COLECTOR MÓVIL (Drive - Punto y coma ';')
 # -------------------------------------------------------------------------
 with tab0:
     st.subheader("📱 Colector Móvil de Etiquetas")
@@ -244,7 +222,6 @@ with tab0:
             res = requests.get(url)
             if res.status_code == 200:
                 content = res.content.decode("latin1")
-                # El archivo maestro usa delimitador punto y coma (;)
                 reader = csv.reader(content.splitlines(), delimiter=";")
                 next(reader)
                 lista = []
@@ -253,12 +230,11 @@ with tab0:
                     precio_raw = r[2].strip().replace(".", "").replace(",", ".")
                     try:
                         precio_f = float(precio_raw)
-                        # Descarta automáticamente todo lo que tenga precio en cero
                         if precio_f > 0:
                             lista.append({
                                 "SKU": r[0].strip(),
                                 "Descripción": fix_encoding(r[1].strip().strip('"')),
-                                "Precio Crudo": precio_raw,
+                                "Precio Crudo": r[2].strip(),
                                 "Fecha": date.today().strftime("%d/%m/%y")
                             })
                     except: continue
@@ -359,7 +335,7 @@ with tab0:
                     st.download_button("Descargar", data=pdf, file_name="movil_chicos.pdf", mime="application/pdf", use_container_width=True)
 
 # -------------------------------------------------------------------------
-# INTACTO: PESTAÑA 2 - TU CARGA MASIVA TRADICIONAL DE AYER
+# PESTAÑA 2: CARGA MASIVA TRADICIONAL DE AYER (Comas ',')
 # -------------------------------------------------------------------------
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
@@ -466,7 +442,7 @@ with tab1:
             st.error(f"❌ ARCHIVO INCORRECTO: {e} Por favor, asegurate de exportar la lista de precios normal del sistema.")
 
 # -------------------------------------------------------------------------
-# INTACTO: PESTAÑA 3 - TU COMPARADOR DE PRECIOS DE AYER
+# PESTAÑA 3: COMPARADOR DE PRECIOS DE AYER (Comas ',')
 # -------------------------------------------------------------------------
 with tab2:
     st.subheader("📊 Comparar Cambios de Precios")
