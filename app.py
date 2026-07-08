@@ -195,22 +195,23 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# CSS INYECTADO: Conservamos solo el tamaño de botones y tabs táctiles seguros
+# CSS INYECTADO SEGURO: Estiliza directamente los botones por orden de columna, sin romper etiquetas
 st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
     
-    .stButton button {
-        height: 62px !important;
-        font-size: 19px !important;
+    /* Forzar tamaño gigante en todos los botones de la interfaz táctil */
+    div[data-testid="stColumn"] button {
+        height: 65px !important;
+        font-size: 18px !important;
         font-weight: bold !important;
-        border-radius: 14px !important;
-        margin-bottom: 8px !important;
+        border-radius: 12px !important;
     }
     
-    div.mobile-gigante button { background-color: #D32F2F !important; color: white !important; border: none !important; }
-    div.mobile-mediano button { background-color: #1976D2 !important; color: white !important; border: none !important; }
-    div.mobile-chico button { background-color: #388E3C !important; color: white !important; border: none !important; }
+    /* Pintar cada columna de un color según el tamaño de la etiqueta */
+    div[data-testid="stColumn"]:nth-of-type(1) button { background-color: #D32F2F !important; color: white !important; border: none !important; }
+    div[data-testid="stColumn"]:nth-of-type(2) button { background-color: #1976D2 !important; color: white !important; border: none !important; }
+    div[data-testid="stColumn"]:nth-of-type(3) button { background-color: #388E3C !important; color: white !important; border: none !important; }
 </style>
 """)
 
@@ -222,7 +223,7 @@ if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL (Reparado Nativo e Instantáneo)
+# PESTAÑA 1: COLECTOR MÓVIL (100% Nativo y Limpio)
 # -------------------------------------------------------------------------
 with tab0:
     @st.cache_data(ttl=30)
@@ -258,7 +259,7 @@ with tab0:
         st.error("⚠️ Error de lectura. Verificá que el Spreadsheet esté público.")
         df_drive = pd.DataFrame(columns=["SKU", "Descripción", "Precio Crudo", "Fecha"])
     else:
-        st.caption(f"🟢 Lista en tiempo real vinculada. {len(df_drive)} artículos.")
+        st.caption(f"🟢 Lista en tiempo real vinculada. {len(df_drive)} artículos activos.")
 
     query = st.text_input("🔎 Ingresá código de barra o descripción:", key="scanner_input", placeholder="Escribí acá...").strip().lower()
     
@@ -273,7 +274,6 @@ with tab0:
         if resultados.empty:
             st.warning("❌ No se encontró ningún artículo.")
         else:
-            # INSTANTÁNEO: Selección inmediata inteligente
             if len(resultados) == 1:
                 prod = resultados.iloc[0]
             else:
@@ -282,30 +282,24 @@ with tab0:
                 seleccionado = st.selectbox("Se encontraron varias opciones, tocá la correcta:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
                 prod = df_drive.loc[seleccionado]
             
-            # Formato nativo ultra seguro anti-errores
+            # Ficha del producto en formato nativo blindado
             st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO:** {prod['SKU']}")
             st.metric(label="💰 PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
             
             st.write("📐 **Mandar a Imprimir:**")
             c1, c2, c3 = st.columns(3)
             with c1:
-                st.markdown('<div class="mobile-gigante">', unsafe_html=True)
                 if st.button("🔴 GIGANTE", key="btn_g_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
                     st.toast("¡Agregado a Gigantes! 🔴")
-                st.markdown('</div>', unsafe_html=True)
             with c2:
-                st.markdown('<div class="mobile-mediano">', unsafe_html=True)
                 if st.button("🔵 MEDIANO", key="btn_m_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
                     st.toast("¡Agregado a Medianos! 🔵")
-                st.markdown('</div>', unsafe_html=True)
             with c3:
-                st.markdown('<div class="mobile-chico">', unsafe_html=True)
                 if st.button("🟢 CHICO", key="btn_c_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
                     st.toast("¡Agregado a Chicos! 🟢")
-                st.markdown('</div>', unsafe_html=True)
 
     if st.session_state.cola_impresion:
         st.write("---")
@@ -412,7 +406,7 @@ with tab1:
 # PESTAÑA 3: COMPARADOR DE PRECIOS DE AYER (Comas ',')
 # -------------------------------------------------------------------------
 with tab2:
-    st.subheader("📊 Comparar Cambios de Precios")
+    st.subheader("📊 Compartar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
     file_b = st.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="file_b_up")
     if file_a and file_b:
