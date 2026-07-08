@@ -195,37 +195,22 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# CSS INYECTADO: Botones gigantes para pantalla táctil, métricas vistosas y espaciado móvil
+# CSS INYECTADO: Conservamos solo el tamaño de botones y tabs táctiles seguros
 st.html("""
 <style>
-    /* Tabs más grandes para el dedo */
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
     
-    /* ESTILOS BOTONES MÓVILES GIGANTES */
     .stButton button {
-        height: 60px !important;
-        font-size: 18px !important;
+        height: 62px !important;
+        font-size: 19px !important;
         font-weight: bold !important;
-        border-radius: 12px !important;
-        margin-bottom: 10px !important;
-        transition: transform 0.1s ease-in-out;
+        border-radius: 14px !important;
+        margin-bottom: 8px !important;
     }
-    .stButton button:active { transform: scale(0.96); }
     
-    /* Colores fijos de botones táctiles */
-    div.mobile-gigante button { background-color: #E53935 !important; color: white !important; border: none !important; }
-    div.mobile-mediano button { background-color: #1E88E5 !important; color: white !important; border: none !important; }
-    div.mobile-chico button { background-color: #43A047 !important; color: white !important; border: none !important; }
-    
-    /* Contenedor del producto seleccionado */
-    .product-box {
-        background-color: #f8f9fa;
-        border-left: 6px solid #FFB300;
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 10px;
-        margin-bottom: 15px;
-    }
+    div.mobile-gigante button { background-color: #D32F2F !important; color: white !important; border: none !important; }
+    div.mobile-mediano button { background-color: #1976D2 !important; color: white !important; border: none !important; }
+    div.mobile-chico button { background-color: #388E3C !important; color: white !important; border: none !important; }
 </style>
 """)
 
@@ -237,7 +222,7 @@ if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL (Interfaz Inteligente y Veloz)
+# PESTAÑA 1: COLECTOR MÓVIL (Reparado Nativo e Instantáneo)
 # -------------------------------------------------------------------------
 with tab0:
     @st.cache_data(ttl=30)
@@ -275,7 +260,6 @@ with tab0:
     else:
         st.caption(f"🟢 Lista en tiempo real vinculada. {len(df_drive)} artículos.")
 
-    # Campo de texto optimizado
     query = st.text_input("🔎 Ingresá código de barra o descripción:", key="scanner_input", placeholder="Escribí acá...").strip().lower()
     
     if query:
@@ -289,50 +273,40 @@ with tab0:
         if resultados.empty:
             st.warning("❌ No se encontró ningún artículo.")
         else:
-            # OPTIMIZACIÓN DE VELOCIDAD: Si hay coincidencia exacta o es uno solo, se pre-selecciona automáticamente
+            # INSTANTÁNEO: Selección inmediata inteligente
             if len(resultados) == 1:
                 prod = resultados.iloc[0]
             else:
-                # Si hay pocos, los dejamos listos en un selector veloz de un toque
                 opciones_mostrar = resultados.copy()
                 opciones_mostrar["Etiqueta"] = opciones_mostrar["SKU"] + " - " + opciones_mostrar["Descripción"]
                 seleccionado = st.selectbox("Se encontraron varias opciones, tocá la correcta:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
                 prod = df_drive.loc[seleccionado]
             
-            # Ficha del producto grande para ver en el acto
-            st.markdown(f"""
-            <div class="product-box">
-                <h3 style='margin:0; color:#212121;'>{prod['Descripción']}</h3>
-                <p style='margin:5px 0 0 0; font-size:14px; color:#616161;'><b>Código:</b> {prod['SKU']}</p>
-            </div>
-            """, unsafe_html=True)
+            # Formato nativo ultra seguro anti-errores
+            st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO:** {prod['SKU']}")
+            st.metric(label="💰 PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
             
-            st.metric(label="PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
-            
-            st.markdown("### 📐 Mandar a Imprimir:")
-            
-            # BOTONES GIGANTES EN COLUMNAS (Estilo Teclado Numérico / Táctil)
+            st.write("📐 **Mandar a Imprimir:**")
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown('<div class="mobile-gigante">', unsafe_html=True)
-                if st.button("🔴\n\nGIGANTE", key="btn_g_u", use_container_width=True):
+                if st.button("🔴 GIGANTE", key="btn_g_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
                     st.toast("¡Agregado a Gigantes! 🔴")
                 st.markdown('</div>', unsafe_html=True)
             with c2:
                 st.markdown('<div class="mobile-mediano">', unsafe_html=True)
-                if st.button("🔵\n\nMEDIANO", key="btn_m_u", use_container_width=True):
+                if st.button("🔵 MEDIANO", key="btn_m_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
                     st.toast("¡Agregado a Medianos! 🔵")
                 st.markdown('</div>', unsafe_html=True)
             with c3:
                 st.markdown('<div class="mobile-chico">', unsafe_html=True)
-                if st.button("🟢\n\nCHICO", key="btn_c_u", use_container_width=True):
+                if st.button("🟢 CHICO", key="btn_c_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
                     st.toast("¡Agregado a Chicos! 🟢")
                 st.markdown('</div>', unsafe_html=True)
 
-    # Bolsa de impresión acumulada
     if st.session_state.cola_impresion:
         st.write("---")
         st.subheader("📋 Tu Carrito de Impresión")
@@ -383,7 +357,7 @@ with tab1:
             for r in reader:
                 if not r: continue
                 if len(r) < 3:
-                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas del sistema de precios (Faltan SKU, Descripción o Precio).")
+                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas del sistema de precios.")
                 
                 r_ext = list(r) + [""] * (5 - len(r))
                 sku = r_ext[2].strip()
