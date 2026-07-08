@@ -191,30 +191,55 @@ def generar_etiquetas_chicas(products_list):
     return buffer
 
 # =========================================================================
-# INTERFAZ DE USUARIO CONFIGURADA
+# INTERFAZ MULTIPLATAFORMA
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
-st.title("🎈 Cotyland - Panel Multiplataforma")
 
+# CSS INYECTADO: Botones gigantes para pantalla táctil, métricas vistosas y espaciado móvil
 st.html("""
 <style>
-    div[data-testid="stColumn"]:nth-of-type(1) button { background-color: #d32f2f !important; color: white !important; font-weight: bold !important; border: none !important; }
-    div[data-testid="stColumn"]:nth-of-type(2) button { background-color: #1976d2 !important; color: white !important; font-weight: bold !important; border: none !important; }
-    div[data-testid="stColumn"]:nth-of-type(3) button { background-color: #388e3c !important; color: white !important; font-weight: bold !important; border: none !important; }
+    /* Tabs más grandes para el dedo */
+    button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
+    
+    /* ESTILOS BOTONES MÓVILES GIGANTES */
+    .stButton button {
+        height: 60px !important;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        border-radius: 12px !important;
+        margin-bottom: 10px !important;
+        transition: transform 0.1s ease-in-out;
+    }
+    .stButton button:active { transform: scale(0.96); }
+    
+    /* Colores fijos de botones táctiles */
+    div.mobile-gigante button { background-color: #E53935 !important; color: white !important; border: none !important; }
+    div.mobile-mediano button { background-color: #1E88E5 !important; color: white !important; border: none !important; }
+    div.mobile-chico button { background-color: #43A047 !important; color: white !important; border: none !important; }
+    
+    /* Contenedor del producto seleccionado */
+    .product-box {
+        background-color: #f8f9fa;
+        border-left: 6px solid #FFB300;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+        margin-bottom: 15px;
+    }
 </style>
 """)
 
-tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil (Drive)", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
+st.title("🎈 Cotyland - Panel Multiplataforma")
+
+tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL (Lector Universal Coma / Punto y Coma)
+# PESTAÑA 1: COLECTOR MÓVIL (Interfaz Inteligente y Veloz)
 # -------------------------------------------------------------------------
 with tab0:
-    st.subheader("📱 Colector Móvil de Etiquetas")
-    
     @st.cache_data(ttl=30)
     def descargar_base_drive(url):
         try:
@@ -223,43 +248,35 @@ with tab0:
                 content = res.content.decode("utf-8")
                 lineas = content.splitlines()
                 if not lineas: return None
-                
-                # SENSOR AUTO-DETECT DE DELIMITADOR (Coma o Punto y Coma)
                 primera_linea = lineas[0]
                 separador = ";" if primera_linea.count(";") > primera_linea.count(",") else ","
-                
                 reader = csv.reader(lineas, delimiter=separador)
-                next(reader) # Salta cabecera
-                
+                next(reader)
                 lista = []
                 for r in reader:
                     if not r or len(r) < 3: continue
                     sku = r[0].strip()
                     desc = fix_encoding(r[1].strip().strip('"'))
                     precio_raw = r[2].strip()
-                    
                     if not sku or not desc: continue
-                    
                     lista.append({
-                        "SKU": sku,
-                        "Descripción": desc,
-                        "Precio Crudo": precio_raw,
+                        "SKU": sku, "Descripción": desc, "Precio Crudo": precio_raw,
                         "Fecha": date.today().strftime("%d/%m/%y")
                     })
                 return pd.DataFrame(lista)
-        except Exception as e:
-            return None
+        except: return None
         return None
 
     df_drive = descargar_base_drive(URL_DRIVE)
     
     if df_drive is None or df_drive.empty:
-        st.error("⚠️ Error de lectura de datos. Comprobá que la Hoja de Cálculo esté compartida como pública ('Cualquier persona con el enlace puede verlo').")
+        st.error("⚠️ Error de lectura. Verificá que el Spreadsheet esté público.")
         df_drive = pd.DataFrame(columns=["SKU", "Descripción", "Precio Crudo", "Fecha"])
     else:
-        st.caption(f"🟢 CONEXIÓN EXITOSA: {len(df_drive)} productos vinculados en tiempo real.")
+        st.caption(f"🟢 Lista en tiempo real vinculada. {len(df_drive)} artículos.")
 
-    query = st.text_input("🔎 Buscá por Código o palabra clave de la Descripción:", key="scanner_input", placeholder="Ej: caja 260...").strip().lower()
+    # Campo de texto optimizado
+    query = st.text_input("🔎 Ingresá código de barra o descripción:", key="scanner_input", placeholder="Escribí acá...").strip().lower()
     
     if query:
         keywords = query.split()
@@ -271,55 +288,57 @@ with tab0:
         
         if resultados.empty:
             st.warning("❌ No se encontró ningún artículo.")
-        elif len(resultados) == 1:
-            prod = resultados.iloc[0]
-            st.success(f"📦 Producto Encontrado: {prod['Descripción']}")
-            st.metric(label="Precio Actual", value=format_price_arg(prod["Precio Crudo"]))
-            st.text(f"SKU: {prod['SKU']}")
-            
-            st.write("📐 **¿A qué tamaño lo querés mandar?**")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                if st.button("🔴 Gigante", key="btn_g_u"):
-                    st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
-                    st.toast("¡Agregado a Gigantes! 🔴")
-            with c2:
-                if st.button("🔵 Mediano", key="btn_m_u"):
-                    st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
-                    st.toast("¡Agregado a Medianos! 🔵")
-            with c3:
-                if st.button("🟢 Chico", key="btn_c_u"):
-                    st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
-                    st.toast("¡Agregado a Chicos! 🟢")
         else:
-            st.info(f"Se encontraron {len(resultados)} opciones. Seleccioná la correcta:")
-            resultados_mostrar = resultados.copy()
-            resultados_mostrar["Mostrar"] = resultados_mostrar["SKU"] + " - " + resultados_mostrar["Descripción"] + " (" + resultados_mostrar["Precio Crudo"] + ")"
+            # OPTIMIZACIÓN DE VELOCIDAD: Si hay coincidencia exacta o es uno solo, se pre-selecciona automáticamente
+            if len(resultados) == 1:
+                prod = resultados.iloc[0]
+            else:
+                # Si hay pocos, los dejamos listos en un selector veloz de un toque
+                opciones_mostrar = resultados.copy()
+                opciones_mostrar["Etiqueta"] = opciones_mostrar["SKU"] + " - " + opciones_mostrar["Descripción"]
+                seleccionado = st.selectbox("Se encontraron varias opciones, tocá la correcta:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
+                prod = df_drive.loc[seleccionado]
             
-            seleccionado = st.radio("Resultados de la búsqueda:", options=resultados_mostrar.index, format_func=lambda idx: resultados_mostrar.loc[idx, "Mostrar"], label_visibility="collapsed")
-            prod = df_drive.loc[seleccionado]
-            st.success(f"📦 Seleccionado: {prod['Descripción']}")
-            st.metric(label="Precio Actual", value=format_price_arg(prod["Precio Crudo"]))
+            # Ficha del producto grande para ver en el acto
+            st.markdown(f"""
+            <div class="product-box">
+                <h3 style='margin:0; color:#212121;'>{prod['Descripción']}</h3>
+                <p style='margin:5px 0 0 0; font-size:14px; color:#616161;'><b>Código:</b> {prod['SKU']}</p>
+            </div>
+            """, unsafe_html=True)
             
+            st.metric(label="PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
+            
+            st.markdown("### 📐 Mandar a Imprimir:")
+            
+            # BOTONES GIGANTES EN COLUMNAS (Estilo Teclado Numérico / Táctil)
             c1, c2, c3 = st.columns(3)
             with c1:
-                if st.button("🔴 Mandar a Gigante", key="btn_g_m_sel"):
+                st.markdown('<div class="mobile-gigante">', unsafe_html=True)
+                if st.button("🔴\n\nGIGANTE", key="btn_g_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Gigante"))
                     st.toast("¡Agregado a Gigantes! 🔴")
+                st.markdown('</div>', unsafe_html=True)
             with c2:
-                if st.button("🔵 Mandar a Mediano", key="btn_m_m_sel"):
+                st.markdown('<div class="mobile-mediano">', unsafe_html=True)
+                if st.button("🔵\n\nMEDIANO", key="btn_m_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Mediano"))
                     st.toast("¡Agregado a Medianos! 🔵")
+                st.markdown('</div>', unsafe_html=True)
             with c3:
-                if st.button("🟢 Mandar a Chico", key="btn_c_m_sel"):
+                st.markdown('<div class="mobile-chico">', unsafe_html=True)
+                if st.button("🟢\n\nCHICO", key="btn_c_u", use_container_width=True):
                     st.session_state.cola_impresion.append((prod["SKU"], prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], "Chico"))
                     st.toast("¡Agregado a Chicos! 🟢")
+                st.markdown('</div>', unsafe_html=True)
 
+    # Bolsa de impresión acumulada
     if st.session_state.cola_impresion:
         st.write("---")
-        st.subheader("📋 Lista Temporal de Impresión")
+        st.subheader("📋 Tu Carrito de Impresión")
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
+        
         edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True)
         
         df_limpio = edited_cola[edited_cola["Quitar ❌"] == True]
@@ -330,22 +349,24 @@ with tab0:
             lm = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Mediano"]
             lc = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Chico"]
             
+            st.write("")
+            st.markdown("### 📥 Descargar Archivos Finales:")
             cg, cm, cc = st.columns(3)
             with cg:
-                if lg and st.button(f"📥 PDF {len(lg)} Gigantes", key="dl_g"):
+                if lg and st.button(f"📥 PDF ({len(lg)}) Gigantes", key="dl_g", use_container_width=True):
                     pdf = generar_carteles_gigantes(lg)
-                    st.download_button("Descargar", data=pdf, file_name="movil_gigantes.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("Bajar", data=pdf, file_name="movil_gigantes.pdf", mime="application/pdf", use_container_width=True)
             with cm:
-                if lm and st.button(f"📥 PDF {len(lm)} Medianos", key="dl_m"):
+                if lm and st.button(f"📥 PDF ({len(lm)}) Medianos", key="dl_m", use_container_width=True):
                     pdf = generar_precios_medianos(lm)
-                    st.download_button("Descargar", data=pdf, file_name="movil_medianos.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("Bajar", data=pdf, file_name="movil_medianos.pdf", mime="application/pdf", use_container_width=True)
             with cc:
-                if lc and st.button(f"📥 PDF {len(lc)} Chicos", key="dl_c"):
+                if lc and st.button(f"📥 PDF ({len(lc)}) Chicos", key="dl_c", use_container_width=True):
                     pdf = generar_etiquetas_chicas(lc)
-                    st.download_button("Descargar", data=pdf, file_name="movil_chicos.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("Bajar", data=pdf, file_name="movil_chicos.pdf", mime="application/pdf", use_container_width=True)
 
 # -------------------------------------------------------------------------
-# PESTAÑA 2: CARGA MASIVA TRADICIONAL (Comas ',')
+# PESTAÑA 2: CARGA MASIVA TRADICIONAL DE AYER (Comas ',')
 # -------------------------------------------------------------------------
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
@@ -362,7 +383,7 @@ with tab1:
             for r in reader:
                 if not r: continue
                 if len(r) < 3:
-                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas del sistema de precios.")
+                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas del sistema de precios (Faltan SKU, Descripción o Precio).")
                 
                 r_ext = list(r) + [""] * (5 - len(r))
                 sku = r_ext[2].strip()
@@ -391,37 +412,30 @@ with tab1:
                 st.subheader(p_view["Descripción"])
                 st.metric(label="Precio Final", value=format_price_arg(p_view["Precio Crudo"]))
 
-            edited_df = st.data_editor(
-                df_products,
-                column_config={"Imprimir": st.column_config.CheckboxColumn(default=True)},
-                disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"],
-                hide_index=True, use_container_width=True
-            )
-            
+            edited_df = st.data_editor(df_products, column_config={"Imprimir": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"], hide_index=True, use_container_width=True)
             df_filtrado = edited_df[edited_df["Imprimir"] == True]
             lista_final = [(row["SKU"], row["Descripción"], row["Precio Crudo"], row["Fecha"]) for _, row in df_filtrado.iterrows()]
             
             st.write("---")
             st.subheader("3. Descargar Formato de Impresión:")
-            
             col1, col2, col3 = st.columns(3)
             with col1:
-                if st.button("Descargar PDF Gigante", use_container_width=True):
+                if st.button("Descargar PDF Gigante", key="btn_g_csv"):
                     pdf = generar_carteles_gigantes(lista_final)
-                    st.download_button("📥 Bajar Gigantes", data=pdf, file_name="carteles_gigantes.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("📥 Bajar Gigantes", data=pdf, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True)
             with col2:
-                if st.button("Descargar PDF Mediano", use_container_width=True):
+                if st.button("Descargar PDF Mediano", key="btn_m_csv"):
                     pdf = generar_precios_medianos(lista_final)
-                    st.download_button("📥 Bajar Medianos", data=pdf, file_name="precios_medianos.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("📥 Bajar Medianos", data=pdf, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True)
             with col3:
-                if st.button("Descargar PDF Chico", use_container_width=True):
+                if st.button("Descargar PDF Chico", key="btn_c_csv"):
                     pdf = generar_etiquetas_chicas(lista_final)
-                    st.download_button("📥 Bajar Chicas", data=pdf, file_name="etiquetas_chicas.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("📥 Bajar Chicas", data=pdf, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True)
         except Exception as e:
             st.error(f"❌ ARCHIVO INCORRECTO: {e}")
 
 # -------------------------------------------------------------------------
-# PESTAÑA 3: COMPARADOR DE PRECIOS
+# PESTAÑA 3: COMPARADOR DE PRECIOS DE AYER (Comas ',')
 # -------------------------------------------------------------------------
 with tab2:
     st.subheader("📊 Comparar Cambios de Precios")
@@ -438,6 +452,7 @@ with tab2:
 
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
+                    if df.shape[1] < 15: raise IndexError("Estructura inválida.")
                     df_res = pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
@@ -455,4 +470,4 @@ with tab2:
                 st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
                 st.dataframe(df_final, use_container_width=True)
             except Exception as e:
-                st.error(f"❌ ERROR: {e}")
+                st.error(f"❌ ARCHIVO INCORRECTO: {e}")
