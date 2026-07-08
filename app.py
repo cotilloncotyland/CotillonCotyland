@@ -195,12 +195,10 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# CSS INYECTADO SEGURO: Estiliza directamente los botones por orden de columna, sin romper etiquetas
 st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
     
-    /* Forzar tamaño gigante en todos los botones de la interfaz táctil */
     div[data-testid="stColumn"] button {
         height: 65px !important;
         font-size: 18px !important;
@@ -208,7 +206,6 @@ st.html("""
         border-radius: 12px !important;
     }
     
-    /* Pintar cada columna de un color según el tamaño de la etiqueta */
     div[data-testid="stColumn"]:nth-of-type(1) button { background-color: #D32F2F !important; color: white !important; border: none !important; }
     div[data-testid="stColumn"]:nth-of-type(2) button { background-color: #1976D2 !important; color: white !important; border: none !important; }
     div[data-testid="stColumn"]:nth-of-type(3) button { background-color: #388E3C !important; color: white !important; border: none !important; }
@@ -223,7 +220,7 @@ if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: COLECTOR MÓVIL (100% Nativo y Limpio)
+# PESTAÑA 1: COLECTOR MÓVIL (Con Auto-Limpieza de Puntos)
 # -------------------------------------------------------------------------
 with tab0:
     @st.cache_data(ttl=30)
@@ -241,12 +238,17 @@ with tab0:
                 lista = []
                 for r in reader:
                     if not r or len(r) < 3: continue
-                    sku = r[0].strip()
+                    sku_raw = r[0].strip()
+                    # Quitamos puntos molestos del inicio/fin en la base de datos
+                    sku_clean = sku_raw.strip(".") 
                     desc = fix_encoding(r[1].strip().strip('"'))
                     precio_raw = r[2].strip()
-                    if not sku or not desc: continue
+                    if not sku_raw or not desc: continue
                     lista.append({
-                        "SKU": sku, "Descripción": desc, "Precio Crudo": precio_raw,
+                        "SKU": sku_raw, 
+                        "SKU_Clean": sku_clean,
+                        "Descripción": desc, 
+                        "Precio Crudo": precio_raw,
                         "Fecha": date.today().strftime("%d/%m/%y")
                     })
                 return pd.DataFrame(lista)
@@ -257,22 +259,25 @@ with tab0:
     
     if df_drive is None or df_drive.empty:
         st.error("⚠️ Error de lectura. Verificá que el Spreadsheet esté público.")
-        df_drive = pd.DataFrame(columns=["SKU", "Descripción", "Precio Crudo", "Fecha"])
+        df_drive = pd.DataFrame(columns=["SKU", "SKU_Clean", "Descripción", "Precio Crudo", "Fecha"])
     else:
         st.caption(f"🟢 Lista en tiempo real vinculada. {len(df_drive)} artículos activos.")
 
-    query = st.text_input("🔎 Ingresá código de barra o descripción:", key="scanner_input", placeholder="Escribí acá...").strip().lower()
+    raw_query = st.text_input("🔎 Ingresá código de barra o descripción:", key="scanner_input", placeholder="Escribí acá...").strip()
     
-    if query:
-        keywords = query.split()
+    if raw_query:
+        # Limpiamos el punto de lo que se busca para hacer match perfecto
+        query_clean = raw_query.strip(".").lower()
+        keywords = query_clean.split()
+        
         condicion = pd.Series(True, index=df_drive.index)
         for kw in keywords:
-            condicion &= (df_drive["SKU"].str.lower().str.contains(kw)) | (df_drive["Descripción"].str.lower().str.contains(kw))
+            condicion &= (df_drive["SKU_Clean"].str.lower().str.contains(kw)) | (df_drive["Descripción"].str.lower().str.contains(kw))
             
         resultados = df_drive[condicion]
         
         if resultados.empty:
-            st.warning("❌ No se encontró ningún artículo.")
+            st.warning(f"❌ No se encontró ningún artículo para: {raw_query}")
         else:
             if len(resultados) == 1:
                 prod = resultados.iloc[0]
@@ -282,7 +287,6 @@ with tab0:
                 seleccionado = st.selectbox("Se encontraron varias opciones, tocá la correcta:", options=opciones_mostrar.index, format_func=lambda idx: opciones_mostrar.loc[idx, "Etiqueta"])
                 prod = df_drive.loc[seleccionado]
             
-            # Ficha del producto en formato nativo blindado
             st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **CÓDIGO:** {prod['SKU']}")
             st.metric(label="💰 PRECIO EN GÓNDOLA", value=format_price_arg(prod["Precio Crudo"]))
             
@@ -338,7 +342,6 @@ with tab0:
 # -------------------------------------------------------------------------
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
-    st.caption("⚠️ Debe ser el archivo de exportación directa que contiene los precios actuales de las góndolas.")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
     
     if uploaded_file:
@@ -351,7 +354,7 @@ with tab1:
             for r in reader:
                 if not r: continue
                 if len(r) < 3:
-                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas del sistema de precios.")
+                    raise ValueError("El archivo cargado no tiene la cantidad mínima de columnas.")
                 
                 r_ext = list(r) + [""] * (5 - len(r))
                 sku = r_ext[2].strip()
@@ -406,7 +409,7 @@ with tab1:
 # PESTAÑA 3: COMPARADOR DE PRECIOS DE AYER (Comas ',')
 # -------------------------------------------------------------------------
 with tab2:
-    st.subheader("📊 Compartar Cambios de Precios")
+    st.subheader("📊 Comparar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
     file_b = st.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="file_b_up")
     if file_a and file_b:
