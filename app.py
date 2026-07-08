@@ -223,23 +223,27 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# 🔥 VELOCIDAD COLAPINTO: Bajamos la espera a 15 milisegundos para que sea una ráfaga instantánea
+# 🔥 EL EMBRAVECIDO ANTI-F11 REFORZADO:
+# Ataja el F11, espera 8ms a que el lector pegue el código e inyecta un Enter simulando teclado mecánico nativo de Windows
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
         if (e.key === 'F11' || e.keyCode === 122) {
-            e.preventDefault(); // Congela el F11 de raíz para que no parpadee la pantalla
+            e.preventDefault(); // Bloquea el parpadeo de la pantalla
             
-            // Forzado ultra-veloz a los 15ms (justo para que entren los números)
             setTimeout(function() {
-                var inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                if (inputs.length > 0) {
+                var inputBuscador = window.parent.document.querySelector('input[type="text"]');
+                if (inputBuscador) {
+                    // Forzamos la actualización del valor nativo del elemento y disparamos el cambio
+                    inputBuscador.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    // Disparamos el Enter real por teclado virtual
                     var eventoEnter = new KeyboardEvent('keydown', {
-                        bubbles: true, cancelable: true, key: 'Enter', keyCode: 13
+                        bubbles: true, cancelable: true, key: 'Enter', keyCode: 13, which: 13
                     });
-                    inputs[0].dispatchEvent(eventoEnter);
+                    inputBuscador.dispatchEvent(eventoEnter);
                 }
-            }, 15);
+            }, 8); // Tiempo relámpago a lo Colapinto
         }
     });
 </script>
@@ -304,6 +308,7 @@ with tab0:
     raw_query = st.text_input("🔎 ESCANEÁ O ESCRIBÍ ACÁ:", key="scanner_input").strip()
     
     if raw_query:
+        # Volamos residuos del comando F11 y limpiamos puntos
         query_norm = raw_query.replace("F11", "").replace(".", "").lstrip("0").lower()
         if query_norm:
             condicion_codigo = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
@@ -326,7 +331,7 @@ with tab0:
                 
                 codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
                 
-                # Renderiza el producto y precio en pantalla
+                # Muestra el producto y precio en pantalla al instante
                 st.info(f"📦 **PRODUCTO:** {prod['Descripción']} \n\n 🔢 **SKU SISTEMA:** {prod['Id_Articulo']} \n\n 🏷️ **CÓDIGO BARRAS:** {prod['SKU_Original']}")
                 st.metric(label="💰 PRECIO", value=format_price_arg(prod["Precio Crudo"]))
                 
