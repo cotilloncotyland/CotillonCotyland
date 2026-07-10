@@ -274,7 +274,7 @@ if "ultimo_producto" not in st.session_state:
     st.session_state.ultimo_producto = ""
 
 with tab0:
-    @st.cache_data
+    @st.cache_data(ttl="2m")
     def descargar_base_estatica(url):
         try:
             res = requests.get(url)
