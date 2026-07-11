@@ -233,7 +233,8 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 # INTERFAZ DE STREAMLIT
 # =========================================================================
-st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
+# MEJORA GLOBAL: Cambiamos layout a "wide" para ocupar absolutamente todo el ancho de pantalla
+st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
 # Interceptador F11 de PC invariable y blindado
 st.components.v1.html("""
@@ -260,6 +261,8 @@ st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
     div[data-testid="stColumn"] button { height: 50px !important; font-size: 16px !important; font-weight: bold !important; border-radius: 10px !important; }
+    /* Inyección CSS para forzar que las tablas de Streamlit se estiren de forma responsiva */
+    div[data-testid="stDataFrame"] iframe { width: 100% !important; }
 </style>
 """)
 
@@ -272,7 +275,6 @@ if "ultimo_producto" not in st.session_state:
     st.session_state.ultimo_producto = ""
 
 with tab0:
-    # CORRECCIÓN DE CACHÉ: ttl en "2s" (2 segundos) para actualizaciones en tiempo real
     @st.cache_data(ttl="2s")
     def descargar_base_estatica(url):
         try:
@@ -331,9 +333,7 @@ with tab0:
                         codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], tipo_str
                     ))
                     
-                    # MEJORA: Ordenar automáticamente por "Descripción" (alfabético) cada vez que se agrega un ítem
                     st.session_state.cola_impresion = sorted(st.session_state.cola_impresion, key=lambda x: x[1].lower())
-                    
                     st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']} ({tamanio_elegido}) - {format_price_arg(prod['Precio Crudo'])}"
                 else:
                     st.session_state.ultimo_producto = f"❌ Código no encontrado: '{query_cruda}'"
@@ -352,7 +352,18 @@ with tab0:
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
         
-        edited_cola = st.data_editor(df_cola, column_config={"Quitar ❌": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], hide_index=True, use_container_width=True, key="tabla_viva")
+        # Ajuste de visualización responsiva completa para la solapa 0
+        edited_cola = st.data_editor(
+            df_cola, 
+            column_config={
+                "Quitar ❌": st.column_config.CheckboxColumn(default=True),
+                "Descripción": st.column_config.TextColumn(width="large")
+            }, 
+            disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], 
+            hide_index=True, 
+            use_container_width=True, 
+            key="tabla_viva"
+        )
         st.session_state.cola_impresion = [(row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in edited_cola[edited_cola["Quitar ❌"] == True].iterrows()]
         
         if st.session_state.cola_impresion:
@@ -447,61 +458,69 @@ with tab2:
                 changed = merged[merged["Precio_old"] != merged["Precio_new"]]
                 
                 df_final = pd.merge(changed[["SKU"]], df_new[["SKU", "Descripcion", "Precio"]], on="SKU", how="left").rename(columns={"Precio": "Precio_Nuevo"})
-                df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_Anterior"}), on="SKU", how="left")[["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"]].sort_values("SKU")
+                df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_Anterior"}), on="SKU", how="left")[["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"]]
                 
-                # MEJORA: Guardamos en st.session_state para mantener los datos vivos al clickear checkboxes
+                df_final["Descripcion_upper"] = df_final["Descripcion"].fillna("").str.upper()
+                df_final = df_final.sort_values("Descripcion_upper").drop(columns=["Descripcion_upper"])
+                
                 st.session_state.df_comparativa = df_final.copy()
-                st.session_state.df_comparativa.insert(0, "🖨️ Seleccionar", True)
+                st.session_state.df_comparativa.insert(0, "🖨️ Seleccionar", False)
                 st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
                 
             except Exception as e: 
                 st.error(f"❌ Error: {e}")
 
-        # Si ya se procesó el cruce, renderizamos la tabla interactiva y los botones de impresión
         if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
             st.markdown("### 📋 Listado de Cambios Detectados")
-            st.caption("Tildá los productos que querés mandar a la tanda de impresión masiva de abajo:")
+            st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
             
-            # Tabla editable con checkboxes
+            # CAMBIO CLAVE: Quitamos la altura fija (height) para que se estire completa y configuramos el ancho responsivo de columnas
             edited_comp = st.data_editor(
                 st.session_state.df_comparativa,
-                column_config={"🖨️ Seleccionar": st.column_config.CheckboxColumn(default=True)},
+                column_config={
+                    "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False, width="small"),
+                    "SKU": st.column_config.TextColumn(width="small"),
+                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto", width="max"),
+                    "Precio_Anterior": st.column_config.TextColumn(width="small"),
+                    "Precio_Nuevo": st.column_config.TextColumn(width="small")
+                },
                 disabled=["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
                 hide_index=True,
                 use_container_width=True,
                 key="tabla_edicion_comparativa"
             )
             
-            # Filtramos solo los tildados
             df_tildados = edited_comp[edited_comp["🖨️ Seleccionar"] == True]
+            cant_items = len(df_tildados)
             
-            if not df_tildados.empty:
-                # Formateamos al formato que esperan los motores de PDF: (sku, name, price, date_str)
+            st.markdown("### 📥 Impresión Rápida de Cambios:")
+            comp_g, comp_m, comp_c = st.columns(3)
+            
+            if cant_items > 0:
                 fecha_hoy = date.today().strftime("%d/%m/%y")
                 lista_impresion_directa = [
                     (row["SKU"], row["Descripcion"], row["Precio_Nuevo"], fecha_hoy) 
                     for _, row in df_tildados.iterrows()
                 ]
                 
-                st.markdown("### 📥 Impresión Rápida de Cambios:")
-                comp_g, comp_m, comp_c = st.columns(3)
-                
                 with comp_g:
-                    st.write(f"**🔴 Carteles Gigantes ({len(lista_impresion_directa)})**")
+                    st.write(f"**🔴 Carteles Gigantes ({cant_items})**")
                     pdf_comp_g = generar_carteles_gigantes(lista_impresion_directa)
                     st.download_button("⬇️ Descargar PDF", data=pdf_comp_g, file_name="cambios_gigantes.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_g")
                     embeber_e_imprimir_pdf(pdf_comp_g, "print_comp_g")
                     
                 with comp_m:
-                    st.write(f"**🔵 Precios Medianos ({len(lista_impresion_directa)})**")
+                    st.write(f"**🔵 Precios Medianos ({cant_items})**")
                     pdf_comp_m = generar_precios_medianos(lista_impresion_directa)
                     st.download_button("⬇️ Descargar PDF", data=pdf_comp_m, file_name="cambios_medianos.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_m")
                     embeber_e_imprimir_pdf(pdf_comp_m, "print_comp_m")
                     
                 with comp_c:
-                    st.write(f"**🟢 Etiquetas Chicas ({len(lista_impresion_directa)})**")
+                    st.write(f"**🟢 Etiquetas Chicas ({cant_items})**")
                     pdf_comp_c = generar_etiquetas_chicas(lista_impresion_directa)
                     st.download_button("⬇️ Descargar PDF", data=pdf_comp_c, file_name="cambios_chicas.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_c")
                     embeber_e_imprimir_pdf(pdf_comp_c, "print_comp_c")
             else:
-                st.warning("⚠️ No seleccionaste ningún producto para imprimir.")
+                with comp_g: st.info("🔴 Seleccioná ítems")
+                with comp_m: st.info("🔵 Seleccioná ítems")
+                with comp_c: st.info("🟢 Seleccioná ítems")
