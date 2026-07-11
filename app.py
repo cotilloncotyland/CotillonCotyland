@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 import pandas as pd
 import csv
 import io
@@ -88,7 +88,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF (CON CÓDIGO DE BARRAS REAL DESPEGADO DEL RAS)
+# MOTORES DE GENERACIÓN DE PDF
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
@@ -219,7 +219,7 @@ def generar_etiquetas_chicas(products_list):
     return buffer.getvalue()
 
 # =========================================================================
-# INTERFAZ DE STREAMLIT (PANTALLA COMPLETA INTEGRAL)
+# INTERFAZ DE STREAMLIT (PANTALLA ANCHA COMPLETA)
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
@@ -278,6 +278,7 @@ with tab0:
                     desc = fix_encoding(r[1].strip())
                     precio = r[2].strip()
                     id_orig = r[3].strip() if len(r) > 3 else ""
+                    
                     lista.append({
                         "SKU_Original": sku_orig, 
                         "SKU_Norm": sku_orig.replace(".", "").lstrip("0").lower(),
@@ -310,7 +311,6 @@ with tab0:
                 resultados = df_drive[condicion]
                 if not resultados.empty:
                     prod = resultados.iloc[0]
-                    # CORRECCIÓN: Fuerza a guardar el código de barras real (SKU_Original) para el PDF
                     st.session_state.cola_impresion.append((
                         str(prod['SKU_Original']), prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], tamanio_elegido.split(" ")[1]
                     ))
@@ -408,8 +408,11 @@ with tab2:
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
                     if df.shape[1] < 15: raise IndexError("Estructura inválida.")
-                    # CORRECCIÓN: Levantamos df[0] que es el código de barra real del escáner en vez del id numérico interno
                     df_res = pd.DataFrame({"Codigo_Barra": df[0], "Descripcion": df[10], "Precio": df[14]})
+                    # BLINDAJE ANTICRASH RAM: Filtramos casilleros sin código o en cero antes del cruce
+                    df_res = df_res[df_res["Codigo_Barra"].notna()]
+                    df_res["Codigo_Barra"] = df_res["Codigo_Barra"].str.strip()
+                    df_res = df_res[(df_res["Codigo_Barra"] != "") & (df_res["Codigo_Barra"] != "0") & (df_res["Codigo_Barra"] != "S/C")]
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
                 
@@ -422,17 +425,14 @@ with tab2:
                 
                 df_final = changed[["Codigo_Barra", "Descripcion", "Precio_old", "Precio"]].rename(columns={"Codigo_Barra": "Código Barra", "Precio": "Precio_Nuevo", "Precio_old": "Precio_Anterior"})
                 
-                # REQUISITO: Ordenamiento estricto alfabético por descripción
                 df_final["Desc_Upper"] = df_final["Descripcion"].fillna("").str.upper()
                 df_final = df_final.sort_values("Desc_Upper").drop(columns=["Desc_Upper"])
                 
-                # REQUISITO: Planilla arranca con el selector en False (destildado) por defecto
                 df_final.insert(0, "🖨️ Seleccionar", False)
                 st.session_state.df_comparativa = df_final.copy()
                 st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
             except Exception as e: st.error(f"❌ Error: {e}")
 
-        # REQUISITO: Renderización de la planilla interactiva y panel de salida masiva integrado en el comparador
         if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
             st.markdown("### 📋 Listado de Cambios Detectados")
             edited_comp = st.data_editor(
