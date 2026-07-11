@@ -39,7 +39,6 @@ def format_price_arg(price_str: str) -> str:
     try: value = float(s)
     except ValueError: return f"${price_str.strip()}"
     us = f"{value:,.2f}"
-    # Retorna siempre forzado con el signo $ adelante
     return f"${us.replace(',', 'X').replace('.', ',').replace('X', '.')}"
 
 def wrap_text_to_width(text, font_name, font_size, max_width):
@@ -103,26 +102,26 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF (REDISEÑADOS - MÁS GIGANTES Y CON SIGNOS $)
+# MOTORES DE GENERACIÓN DE PDF (CON CÓDIGO DE BARRA REAL Y ALTURAS AJUSTADAS)
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     lbl_w, lbl_h = A4[0] - 10*mm, (A4[1] - 15*mm) / 2
     label_date = date.today().strftime("%d/%m/%Y")
-    for i, (sku, name, price, date_str) in enumerate(products_list):
+    for i, (bar_code, name, price, date_str) in enumerate(products_list):
         pos = i % 2
         if i != 0 and pos == 0: c.showPage()
         x, y = 5*mm, ((A4[1] - 5*mm - lbl_h) if pos == 0 else 5*mm)
         c.rect(x, y, lbl_w, lbl_h)
         
         price_txt = format_price_arg(price).strip()
-        f_size = 135  # Agrandado de 125 a 135 para rellenar
+        f_size = 135  
         while f_size > 20:
             if c.stringWidth(price_txt, "Helvetica-Bold", f_size) <= (lbl_w - 20): break
             f_size -= 2
         c.setFont("Helvetica-Bold", f_size)
-        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/3, price_txt)
+        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/4, price_txt)
         
         c.setFont("Helvetica-Bold", 26)
         desc_clean = fix_encoding(name).strip().upper()
@@ -142,7 +141,7 @@ def generar_carteles_gigantes(products_list):
             ny -= 31
             
         c.setFont("Helvetica-Bold", 12)
-        c.drawCentredString(x + lbl_w/2, y + 14, f"{sku}  {date_str if date_str else label_date}")
+        c.drawCentredString(x + lbl_w/2, y + 16, f"{bar_code}  {date_str if date_str else label_date}")
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
@@ -154,7 +153,7 @@ def generar_precios_medianos(data_rows):
     lbl_w, lbl_h = 100 * mm, 70 * mm
     margin_x, margin_y = (page_width - (2 * lbl_w)) / 2.0, (page_height - (4 * lbl_h)) / 2.0
     col, row = 0, 0
-    for sku, name, price, date_str in data_rows:
+    for bar_code, name, price, date_str in data_rows:
         x = margin_x + col * lbl_w
         y = page_height - margin_y - (row + 1) * lbl_h
         c.rect(x, y, lbl_w, lbl_h)
@@ -175,16 +174,16 @@ def generar_precios_medianos(data_rows):
                 
         price_text = format_price_arg(price).strip()
         if price_text:
-            f_size = 105  # Incrementado de 95 a 105 para máxima lectura remota
+            f_size = 105  
             while f_size > 14:
                 if pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size) <= inner_w: break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 13*mm, price_text)
+            c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 16.5*mm, price_text)
             
-        footer = f"{str(sku).strip()}   {str(date_str).strip()}"
+        footer = f"{str(bar_code).strip()}   {str(date_str).strip()}"
         c.setFont("Helvetica", 10)
-        c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 3*mm, footer)
+        c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 4*mm, footer)
         col += 1
         if col >= 2: col, row = 0, row + 1
         if row >= 4: c.showPage(); row, col = 0, 0
@@ -200,7 +199,7 @@ def generar_etiquetas_chicas(products_list):
     lbl_w, lbl_h = 70*mm, 35*mm
     cols, rows = int((w_page - 10*mm + 2*mm) // (lbl_w + 2*mm)), int((h_page - 10*mm + 2*mm) // (lbl_h + 2*mm))
     per_page = cols * rows
-    for i, (sku, name, price, date_str) in enumerate(products_list):
+    for i, (bar_code, name, price, date_str) in enumerate(products_list):
         if i > 0 and i % per_page == 0: c.showPage()
         pos = i % per_page
         r, col = pos // cols, pos % cols
@@ -208,16 +207,14 @@ def generar_etiquetas_chicas(products_list):
         y = h_page - 5*mm - ((r + 1) * (lbl_h + 2*mm)) + 2*mm
         c.rect(x, y, lbl_w, lbl_h)
         
-        # PRECIO EXPLOSIVO: Subimos la base a 44pt y bajamos con más control para rellenar los bordes vacíos
         price_txt = format_price_arg(price).strip()
         f_size_p = 44  
         while f_size_p > 12:
             if c.stringWidth(price_txt, "Helvetica-Bold", f_size_p) <= (lbl_w - 5*mm): break
             f_size_p -= 1
         c.setFont("Helvetica-Bold", f_size_p)
-        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.16), price_txt)
+        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.24), price_txt)
         
-        # DESCRIPCIÓN OPTIMIZADA: Ocupa renglones completos bien distribuidos y legibles
         c.setFont("Helvetica-Bold", 10)
         desc_clean = fix_encoding(name).strip().upper()
         words = desc_clean.split()
@@ -237,7 +234,7 @@ def generar_etiquetas_chicas(products_list):
             ny -= 11.5
             
         c.setFont("Helvetica", 8)
-        c.drawCentredString(x + lbl_w/2, y + 1.5*mm, f"{sku} - {date_str if date_str else label_date}")
+        c.drawCentredString(x + lbl_w/2, y + 1.2*mm, f"{bar_code} - {date_str if date_str else label_date}")
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
@@ -321,7 +318,7 @@ with tab0:
         st.error("⚠️ Error cargando base de datos estática.")
         df_drive = pd.DataFrame()
     else:
-        st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché RAM.")
+        st.caption(f"🟢 Motor de Alta Velocidad Active: {len(df_drive)} artículos en caché RAM.")
 
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
     tamanio_elegido = st.radio("Seleccioná qué tamaño querés que se guarde automáticamente al escanear:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
@@ -336,7 +333,8 @@ with tab0:
                 
                 if not resultados.empty:
                     prod = resultados.iloc[0]
-                    codigo_impresion = prod['Id_Articulo'] if prod['Id_Articulo'] else prod['SKU_Original']
+                    # CORRECCIÓN: Forzamos a guardar siempre el SKU/Código de barras original leído para imprimirlo en el PDF
+                    codigo_impresion = prod['SKU_Original']
                     tipo_str = tamanio_elegido.split(" ")[1]
                     
                     st.session_state.cola_impresion.append((
@@ -359,7 +357,7 @@ with tab0:
         st.write("---")
         st.subheader("📋 Lista Correlativa de Impresión Actual (Ordenada Alfabéticamente)")
         
-        df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
+        df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["Código Barra", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
         
         edited_cola = st.data_editor(
@@ -368,12 +366,12 @@ with tab0:
                 "Quitar ❌": st.column_config.CheckboxColumn(default=True),
                 "Descripción": st.column_config.TextColumn(width=450)
             }, 
-            disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], 
+            disabled=["Código Barra", "Descripción", "Precio", "Fecha", "Tamaño"], 
             hide_index=True, 
             use_container_width=True, 
             key="tabla_viva"
         )
-        st.session_state.cola_impresion = [(row["SKU"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in edited_cola[edited_cola["Quitar ❌"] == True].iterrows()]
+        st.session_state.cola_impresion = [(row["Código Barra"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in edited_cola[edited_cola["Quitar ❌"] == True].iterrows()]
         
         if st.session_state.cola_impresion:
             lg = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Gigante"]
@@ -487,7 +485,7 @@ with tab2:
                 st.session_state.df_comparativa,
                 column_config={
                     "🖨️ Seleccionar": {"width": 90, "type": "checkbox"},
-                    "SKU": {"width": 110},
+                    "SKU": {"title": "Código Barra", "width": 110},
                     "Descripcion": {"title": "Descripción del Producto", "width": 620},
                     "Precio_Anterior": {"width": 120},
                     "Precio_Nuevo": {"width": 120}
