@@ -471,15 +471,15 @@ with tab2:
             st.markdown("### 📋 Listado de Cambios Detectados")
             st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
             
-            # CONFIGURACIÓN NUMÉRICA BLINDADA: Reemplazados textos por enteros en píxeles
+            # ELIMINACIÓN TOTAL DE OBJETOS INTERNOS: Pasamos la configuración de anchos con formato plano nativo súper compatible
             edited_comp = st.data_editor(
                 st.session_state.df_comparativa,
                 column_config={
-                    "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False, width=90),
-                    "SKU": st.column_config.TextColumn(width=110),
-                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto", width=620),
-                    "Precio_Anterior": st.column_config.TextColumn(width=120),
-                    "Precio_Nuevo": st.column_config.TextColumn(width=120)
+                    "🖨️ Seleccionar": {"width": 90, "type": "checkbox"},
+                    "SKU": {"width": 110},
+                    "Descripcion": {"title": "Descripción del Producto", "width": 620},
+                    "Precio_Anterior": {"width": 120},
+                    "Precio_Nuevo": {"width": 120}
                 },
                 disabled=["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
                 hide_index=True,
