@@ -15,7 +15,7 @@ ID_DRIVE = "1z1naxcQyryThMHj3H9K3xi27EDuugBPnFKrrwrJ8v1Y"
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{ID_DRIVE}/export?format=csv"
 
 # =========================================================================
-# FUNCIONES DE ARREGLO Y DECODIFICACIÓN (Intactas)
+# FUNCIONES DE ARREGLO Y DECODIFICACIÓN
 # =========================================================================
 def fix_encoding(text: str) -> str:
     if text is None: return ""
@@ -59,7 +59,7 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
 # FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA
 # =========================================================================
 def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
-    """Genera un botón que opens el PDF limpio en una pestaña nueva y lanza la impresión en el acto"""
+    """Genera un botón que abre el PDF limpio en una pestaña nueva y lanza la impresión en el acto"""
     base64_pdf = base64.b64encode(bytes_pdf).decode('utf-8')
     
     componente_html = f"""
@@ -102,7 +102,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF (CORREGIDOS)
+# MOTORES DE GENERACIÓN DE PDF
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
@@ -147,7 +147,6 @@ def generar_precios_medianos(data_rows):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
-    # CORRECCIÓN DE UNIDADES: Pasamos a mm fijos para evitar errores de tipo en ReportLab
     lbl_w, lbl_h = 100 * mm, 70 * mm
     margin_x, margin_y = (page_width - (2 * lbl_w)) / 2.0, (page_height - (4 * lbl_h)) / 2.0
     col, row = 0, 0
@@ -469,7 +468,7 @@ with tab2:
                 st.error(f"❌ Error: {e}")
 
         if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
-            st.markdown("### 📋 Listado de Cambios Detected")
+            st.markdown("### 📋 Listado de Cambios Detectados")
             st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
             
             edited_comp = st.data_editor(
@@ -477,7 +476,7 @@ with tab2:
                 column_config={
                     "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False, width="small"),
                     "SKU": st.column_config.TextColumn(width="small"),
-                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto", width="max"),
+                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto", width="large"),
                     "Precio_Anterior": st.column_config.TextColumn(width="small"),
                     "Precio_Nuevo": st.column_config.TextColumn(width="small")
                 },
