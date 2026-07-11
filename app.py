@@ -102,7 +102,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF (CON CÓDIGO DE BARRA REAL Y ALTURAS AJUSTADAS)
+# MOTORES DE GENERACIÓN DE PDF
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
@@ -318,7 +318,7 @@ with tab0:
         st.error("⚠️ Error cargando base de datos estática.")
         df_drive = pd.DataFrame()
     else:
-        st.caption(f"🟢 Motor de Alta Velocidad Active: {len(df_drive)} artículos en caché RAM.")
+        st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché RAM.")
 
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
     tamanio_elegido = st.radio("Seleccioná qué tamaño querés que se guarde automáticamente al escanear:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
@@ -333,7 +333,6 @@ with tab0:
                 
                 if not resultados.empty:
                     prod = resultados.iloc[0]
-                    # CORRECCIÓN: Forzamos a guardar siempre el SKU/Código de barras original leído para imprimirlo en el PDF
                     codigo_impresion = prod['SKU_Original']
                     tipo_str = tamanio_elegido.split(" ")[1]
                     
@@ -453,7 +452,10 @@ with tab2:
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
                     if df.shape[1] < 15: raise IndexError("Estructura inválida.")
-                    df_res = pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
+                    # CORRECCIÓN EN EL CRUCE: Cambiamos df[9] (ID interno) por df[0] o df[11] que trae el código de barra real legible por escáner.
+                    # Mapeamos df[11] como identificador si el sistema lo coloca allí, o df[0] que es el SKU indexado original.
+                    # En tu sistema de gestión, la columna que lee el lector se aloja en df[0] (el código alfanumérico tipo CF0273).
+                    df_res = pd.DataFrame({"SKU": df[0], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
                 
