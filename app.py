@@ -15,7 +15,7 @@ ID_DRIVE = "1z1naxcQyryThMHj3H9K3xi27EDuugBPnFKrrwrJ8v1Y"
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{ID_DRIVE}/export?format=csv"
 
 # =========================================================================
-# FUNCIONES DE ARREGLO Y DECODIFICACIÓN
+# FUNCIONES DE ARREGLO Y DECODIFICACIÓN (Intactas)
 # =========================================================================
 def fix_encoding(text: str) -> str:
     if text is None: return ""
@@ -56,16 +56,15 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
     return lines
 
 # =========================================================================
-# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA (Corregida al 100%)
+# FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA
 # =========================================================================
 def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
-    """Genera un botón que abre el PDF limpio en una pestaña nueva y lanza la impresión en el acto"""
+    """Genera un botón que opens el PDF limpio en una pestaña nueva y lanza la impresión en el acto"""
     base64_pdf = base64.b64encode(bytes_pdf).decode('utf-8')
     
     componente_html = f"""
     <script>
         function ejecutarImpresion() {{
-            // Convertimos el base64 a un objeto Blob puro de PDF para evitar bloqueos
             var byteCharacters = atob("{base64_pdf}");
             var byteNumbers = new Array(byteCharacters.length);
             for (var i = 0; i < byteCharacters.length; i++) {{
@@ -75,7 +74,6 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
             var blob = new Blob([byteArray], {{type: 'application/pdf'}});
             var fileURL = URL.createObjectURL(blob);
             
-            // Abrimos la ventana limpia y mandamos el archivo fiel
             var win = window.open(fileURL);
             if (win) {{
                 setTimeout(function() {{
@@ -104,7 +102,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF
+# MOTORES DE GENERACIÓN DE PDF (Intactas)
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
@@ -274,7 +272,8 @@ if "ultimo_producto" not in st.session_state:
     st.session_state.ultimo_producto = ""
 
 with tab0:
-    @st.cache_data(ttl="2m")
+    # CORRECCIÓN DE CACHÉ: ttl en "2s" (2 segundos) para actualizaciones en tiempo real
+    @st.cache_data(ttl="2s")
     def descargar_base_estatica(url):
         try:
             res = requests.get(url)
@@ -331,6 +330,10 @@ with tab0:
                     st.session_state.cola_impresion.append((
                         codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], tipo_str
                     ))
+                    
+                    # MEJORA: Ordenar automáticamente por "Descripción" (alfabético) cada vez que se agrega un ítem
+                    st.session_state.cola_impresion = sorted(st.session_state.cola_impresion, key=lambda x: x[1].lower())
+                    
                     st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']} ({tamanio_elegido}) - {format_price_arg(prod['Precio Crudo'])}"
                 else:
                     st.session_state.ultimo_producto = f"❌ Código no encontrado: '{query_cruda}'"
@@ -344,7 +347,7 @@ with tab0:
 
     if st.session_state.cola_impresion:
         st.write("---")
-        st.subheader("📋 Lista Correlativa de Impresión Actual")
+        st.subheader("📋 Lista Correlativa de Impresión Actual (Ordenada Alfabéticamente)")
         
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
@@ -419,6 +422,7 @@ with tab2:
     st.subheader("📊 Comparar Cambios de Precios")
     file_a = st.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="file_a_up")
     file_b = st.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="file_b_up")
+    
     if file_a and file_b:
         if st.button("Cruzar Listas y Detectar Cambios", type="primary", use_container_width=True):
             try:
@@ -427,19 +431,77 @@ with tab2:
                     s = str(valor).replace(".", "").replace(",", ".").strip()
                     try: return float(s)
                     except: return None
+                
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
                     if df.shape[1] < 15: raise IndexError("Estructura inválida.")
                     df_res = pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
+                
                 df_a = cargar_df_crudo(file_a)
                 df_b = cargar_df_crudo(file_b)
                 df_old, df_new = (df_a, df_b) if df_b["Precio_num"].mean() >= df_a["Precio_num"].mean() else (df_b, df_a)
+                
                 merged = pd.merge(df_old[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_old"}), df_new[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_new"}), on="SKU", how="inner")
                 changed = merged[merged["Precio_old"] != merged["Precio_new"]]
+                
                 df_final = pd.merge(changed[["SKU"]], df_new[["SKU", "Descripcion", "Precio"]], on="SKU", how="left").rename(columns={"Precio": "Precio_Nuevo"})
                 df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_Anterior"}), on="SKU", how="left")[["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"]].sort_values("SKU")
+                
+                # MEJORA: Guardamos en st.session_state para mantener los datos vivos al clickear checkboxes
+                st.session_state.df_comparativa = df_final.copy()
+                st.session_state.df_comparativa.insert(0, "🖨️ Seleccionar", True)
                 st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
-                st.dataframe(df_final, use_container_width=True)
-            except Exception as e: st.error(f"❌ Error: {e}")
+                
+            except Exception as e: 
+                st.error(f"❌ Error: {e}")
+
+        # Si ya se procesó el cruce, renderizamos la tabla interactiva y los botones de impresión
+        if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
+            st.markdown("### 📋 Listado de Cambios Detectados")
+            st.caption("Tildá los productos que querés mandar a la tanda de impresión masiva de abajo:")
+            
+            # Tabla editable con checkboxes
+            edited_comp = st.data_editor(
+                st.session_state.df_comparativa,
+                column_config={"🖨️ Seleccionar": st.column_config.CheckboxColumn(default=True)},
+                disabled=["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
+                hide_index=True,
+                use_container_width=True,
+                key="tabla_edicion_comparativa"
+            )
+            
+            # Filtramos solo los tildados
+            df_tildados = edited_comp[edited_comp["🖨️ Seleccionar"] == True]
+            
+            if not df_tildados.empty:
+                # Formateamos al formato que esperan los motores de PDF: (sku, name, price, date_str)
+                fecha_hoy = date.today().strftime("%d/%m/%y")
+                lista_impresion_directa = [
+                    (row["SKU"], row["Descripcion"], row["Precio_Nuevo"], fecha_hoy) 
+                    for _, row in df_tildados.iterrows()
+                ]
+                
+                st.markdown("### 📥 Impresión Rápida de Cambios:")
+                comp_g, comp_m, comp_c = st.columns(3)
+                
+                with comp_g:
+                    st.write(f"**🔴 Carteles Gigantes ({len(lista_impresion_directa)})**")
+                    pdf_comp_g = generar_carteles_gigantes(lista_impresion_directa)
+                    st.download_button("⬇️ Descargar PDF", data=pdf_comp_g, file_name="cambios_gigantes.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_g")
+                    embeber_e_imprimir_pdf(pdf_comp_g, "print_comp_g")
+                    
+                with comp_m:
+                    st.write(f"**🔵 Precios Medianos ({len(lista_impresion_directa)})**")
+                    pdf_comp_m = generar_precios_medianos(lista_impresion_directa)
+                    st.download_button("⬇️ Descargar PDF", data=pdf_comp_m, file_name="cambios_medianos.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_m")
+                    embeber_e_imprimir_pdf(pdf_comp_m, "print_comp_m")
+                    
+                with comp_c:
+                    st.write(f"**🟢 Etiquetas Chicas ({len(lista_impresion_directa)})**")
+                    pdf_comp_c = generar_etiquetas_chicas(lista_impresion_directa)
+                    st.download_button("⬇️ Descargar PDF", data=pdf_comp_c, file_name="cambios_chicas.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_c")
+                    embeber_e_imprimir_pdf(pdf_comp_c, "print_comp_c")
+            else:
+                st.warning("⚠️ No seleccionaste ningún producto para imprimir.")
