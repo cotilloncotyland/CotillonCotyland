@@ -233,6 +233,29 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
+# INTERCEPTADOR F11 REDISEÑADO CON BLOQUEO TOTAL DE PANTALLA COMPLETA
+st.components.v1.html("""
+<script>
+    window.parent.document.addEventListener('keydown', function(e) {
+        if (e.key === 'F11' || e.keyCode === 122) {
+            e.preventDefault(); // BLOQUEA QUE EL NAVEGADOR SE AGRANDE O ACHIQUE
+            e.stopPropagation();
+            setTimeout(function() {
+                var inputBuscador = window.parent.document.querySelector('input[type="text"]');
+                if (inputBuscador) {
+                    inputBuscador.focus();
+                    inputBuscador.dispatchEvent(new Event('change', { bubbles: true }));
+                    var eventoEnter = new KeyboardEvent('keydown', {
+                        bubbles: true, cancelable: true, key: 'Enter', keyCode: 13, which: 13
+                    });
+                    inputBuscador.dispatchEvent(eventoEnter);
+                }
+            }, 10);
+        }
+    }, true);
+</script>
+""", height=0)
+
 st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
@@ -290,7 +313,6 @@ with tab0:
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
     tamanio_elegido = st.radio("Seleccioná qué tamaño:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
 
-    # REPARACIÓN BLINDADA: Busca por ambos campos y valida que no venga vacío para que no crashee jamás
     def procesar_colector_veloz():
         query_cruda = st.session_state.colector_input.strip()
         if query_cruda:
