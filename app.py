@@ -233,12 +233,12 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
-# INTERCEPTADOR F11 REDISEÑADO CON BLOQUEO TOTAL DE PANTALLA COMPLETA
+# INTERCEPTADOR F11 CON PREVENCIÓN TOTAL DE RE-RUNS ERRÓNEOS
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
         if (e.key === 'F11' || e.keyCode === 122) {
-            e.preventDefault(); // BLOQUEA QUE EL NAVEGADOR SE AGRANDE O ACHIQUE
+            e.preventDefault(); 
             e.stopPropagation();
             setTimeout(function() {
                 var inputBuscador = window.parent.document.querySelector('input[type="text"]');
@@ -267,6 +267,7 @@ st.html("""
 st.title("🎈 Cotyland - Panel Multiplataforma")
 tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
+# Inicializaciones de estados RAM estrictos
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 if "ultimo_producto" not in st.session_state:
@@ -311,26 +312,27 @@ with tab0:
         st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché.")
 
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
-    tamanio_elegido = st.radio("Seleccioná qué tamaño:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
+    tamanio_elegido = st.radio("Seleccioná qué tamaño:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True, key="radio_tamanio_vivo")
 
-    def procesar_colector_veloz():
-        query_cruda = st.session_state.colector_input.strip()
-        if query_cruda:
-            query_norm = query_cruda.replace("F11", "").replace(".", "").lstrip("0").lower()
-            if query_norm:
-                condicion = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
-                resultados = df_drive[condicion]
-                if not resultados.empty:
-                    prod = resultados.iloc[0]
-                    st.session_state.cola_impresion.append((
-                        str(prod['SKU_Original']), str(prod["Descripción"]), str(prod["Precio Crudo"]), str(prod["Fecha"]), str(tamanio_elegido.split(" ")[1])
-                    ))
-                    st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']}"
-                else:
-                    st.session_state.ultimo_producto = f"❌ Código no encontrado en la base: '{query_cruda}'"
-        st.session_state.colector_input = ""
-
-    st.text_input("🔎 ESCANEÁ ACÁ:", key="colector_input", on_change=procesar_colector_veloz)
+    # FLUJO DE ENTRADA TOTALMENTE SEPARADO Y SIN ON_CHANGE CONTRADICTORIO
+    query_cruda = st.text_input("🔎 ESCANEÁ ACÁ (PASÁ LOS CÓDIGOS DE CORRIDO):", key="txt_input_escaneo")
+    
+    if query_cruda:
+        query_norm = query_cruda.replace("F11", "").replace(".", "").lstrip("0").lower()
+        condicion = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
+        resultados = df_drive[condicion]
+        if not resultados.empty:
+            prod = resultados.iloc[0]
+            # Inyección de tupla limpia e invariable
+            st.session_state.cola_impresion.append((
+                str(prod['SKU_Original']), str(prod["Descripción"]), str(prod["Precio Crudo"]), str(prod["Fecha"]), str(tamanio_elegido.split(" ")[1])
+            ))
+            st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']}"
+        else:
+            st.session_state.ultimo_producto = f"❌ Código no encontrado en la base: '{query_cruda}'"
+        
+        # Limpieza manual controlada al final de la lógica para evitar loops infinitos
+        st.rerun()
 
     if st.session_state.ultimo_producto:
         st.info(st.session_state.ultimo_producto)
@@ -349,7 +351,7 @@ with tab0:
             with cg:
                 if lg:
                     pdf_g = generar_carteles_gigantes(lg)
-                    st.download_button("⬇️ Gigantes", data=pdf_g, file_name="gigantes.pdf", use_container_width=True)
+                    st.download_button("⬇ nighttime Gigantes", data=pdf_g, file_name="gigantes.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_g, "p_g")
             with cm:
                 if lm:
