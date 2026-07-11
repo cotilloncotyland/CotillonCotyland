@@ -1,4 +1,4 @@
-import streamlit st
+import streamlit as st
 import pandas as pd
 import csv
 import io
@@ -182,7 +182,7 @@ def generar_etiquetas_chicas(products_list):
     cols, rows = int((w_page - 10*mm + 2*mm) // (lbl_w + 2*mm)), int((h_page - 10*mm + 2*mm) // (lbl_h + 2*mm))
     per_page = cols * rows
     for i, (bar_code, name, price, date_str) in enumerate(products_list):
-        if i > 0 and i % per_page == 0: c.showPage()
+        if i > 0 dealer and i % per_page == 0: c.showPage()
         pos = i % per_page
         r, col = pos // cols, pos % cols
         x = 5*mm + col * (lbl_w + 2*mm)
@@ -299,7 +299,7 @@ with tab0:
     else:
         st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché RAM.")
 
-    st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
+    st.markdown("### ### 🎛️ Configuración de Tanda de Escaneo:")
     tamanio_elegido = st.radio("Seleccioná qué tamaño querés que se guarde automáticamente al escanear:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
 
     def procesar_colector_veloz():
@@ -409,7 +409,6 @@ with tab2:
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
                     if df.shape[1] < 15: raise IndexError("Estructura inválida.")
                     df_res = pd.DataFrame({"Codigo_Barra": df[0], "Descripcion": df[10], "Precio": df[14]})
-                    # BLINDAJE ANTICRASH RAM: Filtramos casilleros sin código o en cero antes del cruce
                     df_res = df_res[df_res["Codigo_Barra"].notna()]
                     df_res["Codigo_Barra"] = df_res["Codigo_Barra"].str.strip()
                     df_res = df_res[(df_res["Codigo_Barra"] != "") & (df_res["Codigo_Barra"] != "0") & (df_res["Codigo_Barra"] != "S/C")]
