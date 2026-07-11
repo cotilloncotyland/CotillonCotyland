@@ -452,10 +452,7 @@ with tab2:
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
                     if df.shape[1] < 15: raise IndexError("Estructura inválida.")
-                    # CORRECCIÓN EN EL CRUCE: Cambiamos df[9] (ID interno) por df[0] o df[11] que trae el código de barra real legible por escáner.
-                    # Mapeamos df[11] como identificador si el sistema lo coloca allí, o df[0] que es el SKU indexado original.
-                    # En tu sistema de gestión, la columna que lee el lector se aloja en df[0] (el código alfanumérico tipo CF0273).
-                    df_res = pd.DataFrame({"SKU": df[0], "Descripcion": df[10], "Precio": df[14]})
+                    df_res = pd.DataFrame({"SKU_Interno": df[9], "Codigo_Barra": df[0], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
                 
@@ -463,11 +460,10 @@ with tab2:
                 df_b = cargar_df_crudo(file_b)
                 df_old, df_new = (df_a, df_b) if df_b["Precio_num"].mean() >= df_a["Precio_num"].mean() else (df_b, df_a)
                 
-                merged = pd.merge(df_old[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_old"}), df_new[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_new"}), on="SKU", how="inner")
-                changed = merged[merged["Precio_old"] != merged["Precio_new"]]
+                merged = pd.merge(df_old[["SKU_Interno", "Precio_num"]].rename(columns={"Precio_num": "Precio_old"}), df_new[["SKU_Interno", "Precio_num", "Codigo_Barra", "Descripcion", "Precio"]], on="SKU_Interno", how="inner")
+                changed = merged[merged["Precio_old"] != merged["Precio_num"]]
                 
-                df_final = pd.merge(changed[["SKU"]], df_new[["SKU", "Descripcion", "Precio"]], on="SKU", how="left").rename(columns={"Precio": "Precio_Nuevo"})
-                df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_Anterior"}), on="SKU", how="left")[["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"]]
+                df_final = changed[["Codigo_Barra", "Descripcion", "Precio_old", "Precio"]].rename(columns={"Codigo_Barra": "Código Barra", "Precio": "Precio_Nuevo", "Precio_old": "Precio_Anterior"})
                 
                 df_final["Descripcion_upper"] = df_final["Descripcion"].fillna("").str.upper()
                 df_final = df_final.sort_values("Descripcion_upper").drop(columns=["Descripcion_upper"])
@@ -477,22 +473,23 @@ with tab2:
                 st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
                 
             except Exception as e: 
-                st.error(f"❌ Error: {e}")
+                st.error(f"❌ Error interno en la estructura del archivo: {e}")
 
         if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
             st.markdown("### 📋 Listado de Cambios Detectados")
             st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
             
+            # SOLUCIÓN COMPLETA AL PANTALLAZO GRIS: Usamos objetos de configuración nativos súper limpios que no rompen el validador métrico
             edited_comp = st.data_editor(
                 st.session_state.df_comparativa,
                 column_config={
-                    "🖨️ Seleccionar": {"width": 90, "type": "checkbox"},
-                    "SKU": {"title": "Código Barra", "width": 110},
-                    "Descripcion": {"title": "Descripción del Producto", "width": 620},
-                    "Precio_Anterior": {"width": 120},
-                    "Precio_Nuevo": {"width": 120}
+                    "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False),
+                    "Código Barra": st.column_config.TextColumn(),
+                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto"),
+                    "Precio_Anterior": st.column_config.TextColumn(),
+                    "Precio_Nuevo": st.column_config.TextColumn()
                 },
-                disabled=["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
+                disabled=["Código Barra", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
                 hide_index=True,
                 use_container_width=True,
                 key="tabla_edicion_comparativa"
@@ -507,7 +504,7 @@ with tab2:
             if cant_items > 0:
                 fecha_hoy = date.today().strftime("%d/%m/%y")
                 lista_impresion_directa = [
-                    (row["SKU"], row["Descripcion"], row["Precio_Nuevo"], fecha_hoy) 
+                    (row["Código Barra"], row["Descripcion"], row["Precio_Nuevo"], fecha_hoy) 
                     for _, row in df_tildados.iterrows()
                 ]
                 
