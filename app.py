@@ -37,7 +37,7 @@ def format_price_arg(price_str: str) -> str:
     if "," in s and "." not in s:
         s = s.replace(".", "").replace(",", ".")
     try: value = float(s)
-    except ValueError: return f"${price_str.strip()}"
+    except ValueError: return price_str.strip()
     us = f"{value:,.2f}"
     return f"${us.replace(',', 'X').replace('.', ',').replace('X', '.')}"
 
@@ -102,7 +102,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF (PRECIOS MÁS GRANDES Y LEVANTADOS DEL BORDE)
+# MOTORES DE GENERACIÓN DE PDF (CON UNIDADES CORREGIDAS Y ESPACIADO REVISADO)
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
@@ -114,17 +114,15 @@ def generar_carteles_gigantes(products_list):
         if i != 0 and pos == 0: c.showPage()
         x, y = 5*mm, ((A4[1] - 5*mm - lbl_h) if pos == 0 else 5*mm)
         c.rect(x, y, lbl_w, lbl_h)
-        
         price_txt = format_price_arg(price).strip()
-        f_size = 140  # Agrandado de 125 a 140
+        f_size = 135
         while f_size > 20:
             if c.stringWidth(price_txt, "Helvetica-Bold", f_size) <= (lbl_w - 20): break
             f_size -= 2
         c.setFont("Helvetica-Bold", f_size)
-        # Levantado levemente del fondo para que no se pise abajo
+        # Ajustada la altura vertical para despegar del margen inferior del recuadro
         c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/3, price_txt)
-        
-        c.setFont("Helvetica-Bold", 26)  # Subido de 24 a 26
+        c.setFont("Helvetica-Bold", 26)
         desc_clean = fix_encoding(name).strip().upper()
         words = desc_clean.split()
         lines, curr = [], ""
@@ -150,38 +148,39 @@ def generar_precios_medianos(data_rows):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
-    lbl_w, lbl_h = 10 * cm, 7 * cm
+    # CORREGIDO: Usamos mm en lugar de cm para evitar el TypeError
+    lbl_w, lbl_h = 100 * mm, 70 * mm
     margin_x, margin_y = (page_width - (2 * lbl_w)) / 2.0, (page_height - (4 * lbl_h)) / 2.0
     col, row = 0, 0
     for sku, name, price, date_str in data_rows:
         x = margin_x + col * lbl_w
         y = page_height - margin_y - (row + 1) * lbl_h
         c.rect(x, y, lbl_w, lbl_h)
-        inner_w = lbl_w - 0.6*cm
+        inner_w = lbl_w - 6*mm
         desc_text = fix_encoding(name).strip().upper()
         if desc_text:
-            f_size = 20  # Subido de 18 a 20
+            f_size = 20
             while f_size >= 7:
                 lines = wrap_text_to_width(desc_text, "Helvetica-Bold", f_size, inner_w)
                 if len(lines) * f_size * 1.15 <= (lbl_h * 0.38): break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            curr_y = y + lbl_h - 0.3*cm - f_size
+            curr_y = y + lbl_h - 4*mm - f_size
             for line in lines:
-                c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
+                c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
                 curr_y -= f_size * 1.15
         price_text = format_price_arg(price).strip()
         if price_text:
-            f_size = 105  # Agrandado de 95 a 105
+            f_size = 105
             while f_size > 14:
                 if pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size) <= inner_w: break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            # CORRECCIÓN ALTURA MEDIANOS: Subido a y + 1.5*cm (estaba en 1.1*cm) para que no toque el fondo
-            c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 1.5*cm, price_text)
+            # CORREGIDO: Levantada la posición vertical del precio mediano para que no pise el footer
+            c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 16.5*mm, price_text)
         footer = f"{str(sku).strip()}   {str(date_str).strip()}"
         c.setFont("Helvetica", 10)
-        c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 0.4*cm, footer)
+        c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 4*mm, footer)
         col += 1
         if col >= 2: col, row = 0, row + 1
         if row >= 4: c.showPage(); row, col = 0, 0
@@ -204,17 +203,15 @@ def generar_etiquetas_chicas(products_list):
         x = 5*mm + col * (lbl_w + 2*mm)
         y = h_page - 5*mm - ((r + 1) * (lbl_h + 2*mm)) + 2*mm
         c.rect(x, y, lbl_w, lbl_h)
-        
         price_txt = format_price_arg(price).strip()
-        f_size_p = 44  # REQUISITO 2: Agrandado base de 34 a 44 para que explote de borde a borde
+        f_size_p = 44
         while f_size_p > 12:
             if c.stringWidth(price_txt, "Helvetica-Bold", f_size_p) <= (lbl_w - 4*mm): break
             f_size_p -= 1
         c.setFont("Helvetica-Bold", f_size_p)
-        # REQUISITO 3: Subido a un multiplicador de 0.25 (estaba en 0.22) para limpiar el sku inferior
+        # CORREGIDO: Despegado del ras inferior en las chicas
         c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.25), price_txt)
-        
-        c.setFont("Helvetica-Bold", 10)  # Subido de 9 a 10
+        c.setFont("Helvetica-Bold", 10)
         desc_clean = fix_encoding(name).strip().upper()
         words = desc_clean.split()
         lines, curr = [], ""
@@ -224,15 +221,15 @@ def generar_etiquetas_chicas(products_list):
             else:
                 if curr: lines.append(curr)
                 curr = w
-                if len(lines) == 3: break
-        if curr and len(lines) < 3: lines.append(curr)
+                if len(lines) == 4: break
+        if curr and len(lines) < 4: lines.append(curr)
         ny = y + lbl_h - 5*mm
         for line in lines:
             if ny < (y + (lbl_h * 0.25) + 14): break
             c.drawCentredString(x + lbl_w/2, ny, line)
             ny -= 11.5
         c.setFont("Helvetica", 8)
-        c.drawCentredString(x + lbl_w/2, y + 1.5*mm, f"{sku} - {date_str if date_str else label_date}")
+        c.drawCentredString(x + lbl_w/2, y + 2*mm, f"{sku} - {date_str if date_str else label_date}")
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
@@ -242,26 +239,25 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="centered")
 
-# INTERCEPTADOR EXCLUSIVO PARA F1 (BLOQUEO DE AYUDA Y ENFOQUE CONTINUO)
+# INTERCEPTADOR BLINDADO CONTRA F11 (BLOQUEA LA ACCIÓN EN RAÍZ)
 st.components.v1.html("""
 <script>
-    window.parent.document.addEventListener('keydown', function(e) {
-        if (e.key === 'F1' || e.keyCode === 112) {
-            e.preventDefault(); 
+    function frenarPantallaCompleta(e) {
+        if (e.key === 'F11' || e.keyCode === 122) {
+            e.preventDefault();
             e.stopPropagation();
             setTimeout(function() {
-                var inputBuscador = window.parent.document.querySelector('input[type="text"]');
-                if (inputBuscador) {
-                    inputBuscador.focus();
-                    inputBuscador.dispatchEvent(new Event('change', { bubbles: true }));
-                    var eventoEnter = new KeyboardEvent('keydown', {
-                        bubbles: true, cancelable: true, key: 'Enter', keyCode: 13, which: 13
-                    });
-                    inputBuscador.dispatchEvent(eventoEnter);
+                var box = window.parent.document.querySelector('input[type="text"]');
+                if (box) {
+                    box.focus();
+                    box.dispatchEvent(new Event('change', { bubbles: true }));
+                    var evEnter = new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', keyCode: 13 });
+                    box.dispatchEvent(evEnter);
                 }
             }, 10);
         }
-    }, true);
+    }
+    window.parent.document.addEventListener('keydown', frenarPantallaCompleta, true);
 </script>
 """, height=0)
 
@@ -325,7 +321,7 @@ with tab0:
     def procesar_colector_veloz():
         query_cruda = st.session_state.colector_input.strip()
         if query_cruda:
-            query_norm = query_cruda.replace("F1", "").replace(".", "").lstrip("0").lower()
+            query_norm = query_cruda.replace("F11", "").replace(".", "").lstrip("0").lower()
             if query_norm:
                 condicion = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
                 resultados = df_drive[condicion]
@@ -433,21 +429,17 @@ with tab2:
                     s = str(valor).replace(".", "").replace(",", ".").strip()
                     try: return float(s)
                     except: return None
-                
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
                     if df.shape[1] < 15: raise IndexError("Estructura inválida.")
                     df_res = pd.DataFrame({"SKU": df[9], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
-                
                 df_a = cargar_df_crudo(file_a)
                 df_b = cargar_df_crudo(file_b)
                 df_old, df_new = (df_a, df_b) if df_b["Precio_num"].mean() >= df_a["Precio_num"].mean() else (df_b, df_a)
-                
                 merged = pd.merge(df_old[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_old"}), df_new[["SKU", "Precio_num"]].rename(columns={"Precio_num": "Precio_new"}), on="SKU", how="inner")
                 changed = merged[merged["Precio_old"] != merged["Precio_new"]]
-                
                 df_final = pd.merge(changed[["SKU"]], df_new[["SKU", "Descripcion", "Precio"]], on="SKU", how="left").rename(columns={"Precio": "Precio_Nuevo"})
                 df_final = pd.merge(df_final, df_old[["SKU", "Precio"]].rename(columns={"Precio": "Precio_Anterior"}), on="SKU", how="left")[["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"]].sort_values("SKU")
                 
