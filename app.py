@@ -37,8 +37,9 @@ def format_price_arg(price_str: str) -> str:
     if "," in s and "." not in s:
         s = s.replace(".", "").replace(",", ".")
     try: value = float(s)
-    except ValueError: return price_str.strip()
+    except ValueError: return f"${price_str.strip()}"
     us = f"{value:,.2f}"
+    # Retorna siempre forzado con el signo $ adelante
     return f"${us.replace(',', 'X').replace('.', ',').replace('X', '.')}"
 
 def wrap_text_to_width(text, font_name, font_size, max_width):
@@ -102,7 +103,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF
+# MOTORES DE GENERACIÓN DE PDF (REDISEÑADOS - MÁS GIGANTES Y CON SIGNOS $)
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
@@ -114,29 +115,32 @@ def generar_carteles_gigantes(products_list):
         if i != 0 and pos == 0: c.showPage()
         x, y = 5*mm, ((A4[1] - 5*mm - lbl_h) if pos == 0 else 5*mm)
         c.rect(x, y, lbl_w, lbl_h)
+        
         price_txt = format_price_arg(price).strip()
-        f_size = 125
+        f_size = 135  # Agrandado de 125 a 135 para rellenar
         while f_size > 20:
             if c.stringWidth(price_txt, "Helvetica-Bold", f_size) <= (lbl_w - 20): break
             f_size -= 2
         c.setFont("Helvetica-Bold", f_size)
-        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/2, price_txt)
-        c.setFont("Helvetica-Bold", 24)
-        desc_clean = fix_encoding(name).strip()
+        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size))/2, y + lbl_h/2 - f_size/3, price_txt)
+        
+        c.setFont("Helvetica-Bold", 26)
+        desc_clean = fix_encoding(name).strip().upper()
         words = desc_clean.split()
         lines, curr = [], ""
         for w in words:
             test = w if not curr else curr + " " + w
-            if c.stringWidth(test, "Helvetica-Bold", 24) <= (lbl_w - 40): curr = test
+            if c.stringWidth(test, "Helvetica-Bold", 26) <= (lbl_w - 40): curr = test
             else:
                 if curr: lines.append(curr)
                 curr = w
-                if len(lines) == 1: break
-        if curr and len(lines) < 2: lines.append(curr)
+                if len(lines) == 2: break
+        if curr and len(lines) < 3: lines.append(curr)
         ny = y + lbl_h - 45
         for line in lines:
             c.drawCentredString(x + lbl_w/2, ny, line)
-            ny -= 29
+            ny -= 31
+            
         c.setFont("Helvetica-Bold", 12)
         c.drawCentredString(x + lbl_w/2, y + 14, f"{sku}  {date_str if date_str else label_date}")
     c.save()
@@ -155,26 +159,29 @@ def generar_precios_medianos(data_rows):
         y = page_height - margin_y - (row + 1) * lbl_h
         c.rect(x, y, lbl_w, lbl_h)
         inner_w = lbl_w - 6*mm
-        desc_text = fix_encoding(name).strip()
+        
+        desc_text = fix_encoding(name).strip().upper()
         if desc_text:
-            f_size = 18
-            while f_size >= 7:
+            f_size = 20
+            while f_size >= 8:
                 lines = wrap_text_to_width(desc_text, "Helvetica-Bold", f_size, inner_w)
-                if len(lines) * f_size * 1.15 <= (lbl_h * 0.35): break
+                if len(lines) * f_size * 1.15 <= (lbl_h * 0.38): break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            curr_y = y + lbl_h - 3*mm - f_size
+            curr_y = y + lbl_h - 4*mm - f_size
             for line in lines:
                 c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
                 curr_y -= f_size * 1.15
+                
         price_text = format_price_arg(price).strip()
         if price_text:
-            f_size = 95
+            f_size = 105  # Incrementado de 95 a 105 para máxima lectura remota
             while f_size > 14:
                 if pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size) <= inner_w: break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 11*mm, price_text)
+            c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 13*mm, price_text)
+            
         footer = f"{str(sku).strip()}   {str(date_str).strip()}"
         c.setFont("Helvetica", 10)
         c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 3*mm, footer)
@@ -200,32 +207,37 @@ def generar_etiquetas_chicas(products_list):
         x = 5*mm + col * (lbl_w + 2*mm)
         y = h_page - 5*mm - ((r + 1) * (lbl_h + 2*mm)) + 2*mm
         c.rect(x, y, lbl_w, lbl_h)
+        
+        # PRECIO EXPLOSIVO: Subimos la base a 44pt y bajamos con más control para rellenar los bordes vacíos
         price_txt = format_price_arg(price).strip()
-        f_size_p = 34
+        f_size_p = 44  
         while f_size_p > 12:
-            if c.stringWidth(price_txt, "Helvetica-Bold", f_size_p) <= (lbl_w - 4*mm): break
+            if c.stringWidth(price_txt, "Helvetica-Bold", f_size_p) <= (lbl_w - 5*mm): break
             f_size_p -= 1
         c.setFont("Helvetica-Bold", f_size_p)
-        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.22), price_txt)
-        c.setFont("Helvetica-Bold", 9)
-        desc_clean = fix_encoding(name).strip()
+        c.drawString(x + (lbl_w - c.stringWidth(price_txt, "Helvetica-Bold", f_size_p))/2, y + (lbl_h * 0.16), price_txt)
+        
+        # DESCRIPCIÓN OPTIMIZADA: Ocupa renglones completos bien distribuidos y legibles
+        c.setFont("Helvetica-Bold", 10)
+        desc_clean = fix_encoding(name).strip().upper()
         words = desc_clean.split()
         lines, curr = [], ""
         for w in words:
             test = w if not curr else curr + " " + w
-            if c.stringWidth(test, "Helvetica-Bold", 9) <= (lbl_w - 4*mm): curr = test
+            if c.stringWidth(test, "Helvetica-Bold", 10) <= (lbl_w - 4*mm): curr = test
             else:
                 if curr: lines.append(curr)
                 curr = w
-                if len(lines) == 4: break
-        if curr and len(lines) < 4: lines.append(curr)
+                if len(lines) == 2: break
+        if curr and len(lines) < 2: lines.append(curr)
+        
         ny = y + lbl_h - 5*mm
         for line in lines:
-            if ny < (y + (lbl_h * 0.22) + 16): break
             c.drawCentredString(x + lbl_w/2, ny, line)
-            ny -= 11
+            ny -= 11.5
+            
         c.setFont("Helvetica", 8)
-        c.drawCentredString(x + lbl_w/2, y + 2*mm, f"{sku} - {date_str if date_str else label_date}")
+        c.drawCentredString(x + lbl_w/2, y + 1.5*mm, f"{sku} - {date_str if date_str else label_date}")
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
@@ -471,7 +483,6 @@ with tab2:
             st.markdown("### 📋 Listado de Cambios Detectados")
             st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
             
-            # ELIMINACIÓN TOTAL DE OBJETOS INTERNOS: Pasamos la configuración de anchos con formato plano nativo súper compatible
             edited_comp = st.data_editor(
                 st.session_state.df_comparativa,
                 column_config={
