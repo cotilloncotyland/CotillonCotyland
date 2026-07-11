@@ -233,12 +233,12 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
-# INTERCEPTADOR F11 IMPECABLE
+# CORRECCIÓN EN EL INTERCEPTADOR: Cambiado estrictamente de F11 a F1 para tu lector físico del local
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
-        if (e.key === 'F11' || e.keyCode === 122) {
-            e.preventDefault(); 
+        if (e.key === 'F1' || e.keyCode === 112) {
+            e.preventDefault(); // Evita que se abra la ayuda de Windows/Chrome
             e.stopPropagation();
             setTimeout(function() {
                 var inputBuscador = window.parent.document.querySelector('input[type="text"]');
@@ -285,7 +285,7 @@ with tab0:
                 next(reader)
                 lista = []
                 for r in reader:
-                    if not r or len(r) < 3: continue  # CORREGIDO: Mínimo 3 columnas para levantar toda la base
+                    if not r or len(r) < 3: continue
                     sku_orig = r[0].strip()
                     desc = fix_encoding(r[1].strip())
                     precio = r[2].strip()
@@ -316,8 +316,8 @@ with tab0:
     query_cruda = st.text_input("🔎 ESCANEÁ ACÁ (PASÁ LOS CÓDIGOS DE CORRIDO):", key="txt_input_escaneo")
     
     if query_cruda:
-        query_norm = query_cruda.replace("F11", "").replace(".", "").lstrip("0").lower()
-        # CORREGIDO: Doble condición restaurada para buscar por código de barra o ID interno
+        # Quitamos cualquier remanente de caracteres de control por las dudas
+        query_norm = query_cruda.replace("F1", "").replace("F11", "").replace(".", "").lstrip("0").lower()
         condicion = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
         resultados = df_drive[condicion]
         if not resultados.empty:
@@ -358,7 +358,7 @@ with tab0:
             with cc:
                 if lc:
                     pdf_c = generar_etiquetas_chicas(lc)
-                    st.download_button("⬇️ Chicos", data=pdf_c, file_name="chicos.pdf", use_container_width=True)
+                    st.download_button("⬇️ Chicos", data=pdf_c, file_name="chicas.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_c, "p_c")
 
 with tab1:
@@ -427,7 +427,7 @@ with tab2:
             except Exception as e: st.error(f"❌ Error en archivos: {e}")
 
         if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
-            st.markdown("### 📋 Listado de Cambios Detectados")
+            st.markdown("### 📋 Listado de Cambios Detected")
             edited_comp = st.data_editor(st.session_state.df_comparativa, hide_index=True, use_container_width=True, key="tabla_edicion_comparativa")
             df_tildados = edited_comp[edited_comp["🖨️ Seleccionar"] == True]
             cant_items = len(df_tildados)
