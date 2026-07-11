@@ -354,7 +354,7 @@ with tab0:
             df_cola, 
             column_config={
                 "Quitar ❌": st.column_config.CheckboxColumn(default=True),
-                "Descripción": st.column_config.TextColumn(width="large")
+                "Descripción": st.column_config.TextColumn(width=450)
             }, 
             disabled=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"], 
             hide_index=True, 
@@ -471,14 +471,15 @@ with tab2:
             st.markdown("### 📋 Listado de Cambios Detectados")
             st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
             
+            # CONFIGURACIÓN NUMÉRICA BLINDADA: Reemplazados textos por enteros en píxeles
             edited_comp = st.data_editor(
                 st.session_state.df_comparativa,
                 column_config={
-                    "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False, width="small"),
-                    "SKU": st.column_config.TextColumn(width="small"),
-                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto", width="large"),
-                    "Precio_Anterior": st.column_config.TextColumn(width="small"),
-                    "Precio_Nuevo": st.column_config.TextColumn(width="small")
+                    "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False, width=90),
+                    "SKU": st.column_config.TextColumn(width=110),
+                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto", width=620),
+                    "Precio_Anterior": st.column_config.TextColumn(width=120),
+                    "Precio_Nuevo": st.column_config.TextColumn(width=120)
                 },
                 disabled=["SKU", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
                 hide_index=True,
