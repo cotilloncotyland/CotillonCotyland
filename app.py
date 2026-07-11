@@ -102,7 +102,7 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
     st.components.v1.html(componente_html, height=60)
 
 # =========================================================================
-# MOTORES DE GENERACIÓN DE PDF (Intactas)
+# MOTORES DE GENERACIÓN DE PDF (CORREGIDOS)
 # =========================================================================
 def generar_carteles_gigantes(products_list):
     buffer = io.BytesIO()
@@ -147,14 +147,15 @@ def generar_precios_medianos(data_rows):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
-    lbl_w, lbl_h = 10 * cm, 7 * cm
+    # CORRECCIÓN DE UNIDADES: Pasamos a mm fijos para evitar errores de tipo en ReportLab
+    lbl_w, lbl_h = 100 * mm, 70 * mm
     margin_x, margin_y = (page_width - (2 * lbl_w)) / 2.0, (page_height - (4 * lbl_h)) / 2.0
     col, row = 0, 0
     for sku, name, price, date_str in data_rows:
         x = margin_x + col * lbl_w
         y = page_height - margin_y - (row + 1) * lbl_h
         c.rect(x, y, lbl_w, lbl_h)
-        inner_w = lbl_w - 0.6*cm
+        inner_w = lbl_w - 6*mm
         desc_text = fix_encoding(name).strip()
         if desc_text:
             f_size = 18
@@ -163,9 +164,9 @@ def generar_precios_medianos(data_rows):
                 if len(lines) * f_size * 1.15 <= (lbl_h * 0.35): break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            curr_y = y + lbl_h - 0.3*cm - f_size
+            curr_y = y + lbl_h - 3*mm - f_size
             for line in lines:
-                c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
+                c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(line, "Helvetica-Bold", f_size))/2.0, curr_y, line)
                 curr_y -= f_size * 1.15
         price_text = format_price_arg(price).strip()
         if price_text:
@@ -174,10 +175,10 @@ def generar_precios_medianos(data_rows):
                 if pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size) <= inner_w: break
                 f_size -= 1
             c.setFont("Helvetica-Bold", f_size)
-            c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 1.1*cm, price_text)
+            c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(price_text, "Helvetica-Bold", f_size))/2.0, y + 11*mm, price_text)
         footer = f"{str(sku).strip()}   {str(date_str).strip()}"
         c.setFont("Helvetica", 10)
-        c.drawString(x + 0.3*cm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 0.3*cm, footer)
+        c.drawString(x + 3*mm + (inner_w - pdfmetrics.stringWidth(footer, "Helvetica", 10))/2.0, y + 3*mm, footer)
         col += 1
         if col >= 2: col, row = 0, row + 1
         if row >= 4: c.showPage(); row, col = 0, 0
@@ -233,7 +234,6 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 # INTERFAZ DE STREAMLIT
 # =========================================================================
-# MEJORA GLOBAL: Cambiamos layout a "wide" para ocupar absolutamente todo el ancho de pantalla
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
 # Interceptador F11 de PC invariable y blindado
@@ -261,7 +261,6 @@ st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
     div[data-testid="stColumn"] button { height: 50px !important; font-size: 16px !important; font-weight: bold !important; border-radius: 10px !important; }
-    /* Inyección CSS para forzar que las tablas de Streamlit se estiren de forma responsiva */
     div[data-testid="stDataFrame"] iframe { width: 100% !important; }
 </style>
 """)
@@ -352,7 +351,6 @@ with tab0:
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["SKU", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
         
-        # Ajuste de visualización responsiva completa para la solapa 0
         edited_cola = st.data_editor(
             df_cola, 
             column_config={
@@ -471,10 +469,9 @@ with tab2:
                 st.error(f"❌ Error: {e}")
 
         if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
-            st.markdown("### 📋 Listado de Cambios Detectados")
+            st.markdown("### 📋 Listado de Cambios Detected")
             st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
             
-            # CAMBIO CLAVE: Quitamos la altura fija (height) para que se estire completa y configuramos el ancho responsivo de columnas
             edited_comp = st.data_editor(
                 st.session_state.df_comparativa,
                 column_config={
