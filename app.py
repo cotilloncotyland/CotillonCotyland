@@ -233,7 +233,7 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
-# INTERCEPTADOR F11 CON PREVENCIÓN TOTAL DE RE-RUNS ERRÓNEOS
+# INTERCEPTADOR F11 IMPECABLE
 st.components.v1.html("""
 <script>
     window.parent.document.addEventListener('keydown', function(e) {
@@ -267,7 +267,6 @@ st.html("""
 st.title("🎈 Cotyland - Panel Multiplataforma")
 tab0, tab1, tab2 = st.tabs(["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"])
 
-# Inicializaciones de estados RAM estrictos
 if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 if "ultimo_producto" not in st.session_state:
@@ -286,7 +285,7 @@ with tab0:
                 next(reader)
                 lista = []
                 for r in reader:
-                    if not r or len(r) < 4: continue
+                    if not r or len(r) < 3: continue  # CORREGIDO: Mínimo 3 columnas para levantar toda la base
                     sku_orig = r[0].strip()
                     desc = fix_encoding(r[1].strip())
                     precio = r[2].strip()
@@ -314,16 +313,15 @@ with tab0:
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
     tamanio_elegido = st.radio("Seleccioná qué tamaño:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True, key="radio_tamanio_vivo")
 
-    # FLUJO DE ENTRADA TOTALMENTE SEPARADO Y SIN ON_CHANGE CONTRADICTORIO
     query_cruda = st.text_input("🔎 ESCANEÁ ACÁ (PASÁ LOS CÓDIGOS DE CORRIDO):", key="txt_input_escaneo")
     
     if query_cruda:
         query_norm = query_cruda.replace("F11", "").replace(".", "").lstrip("0").lower()
+        # CORREGIDO: Doble condición restaurada para buscar por código de barra o ID interno
         condicion = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
         resultados = df_drive[condicion]
         if not resultados.empty:
             prod = resultados.iloc[0]
-            # Inyección de tupla limpia e invariable
             st.session_state.cola_impresion.append((
                 str(prod['SKU_Original']), str(prod["Descripción"]), str(prod["Precio Crudo"]), str(prod["Fecha"]), str(tamanio_elegido.split(" ")[1])
             ))
@@ -331,7 +329,6 @@ with tab0:
         else:
             st.session_state.ultimo_producto = f"❌ Código no encontrado en la base: '{query_cruda}'"
         
-        # Limpieza manual controlada al final de la lógica para evitar loops infinitos
         st.rerun()
 
     if st.session_state.ultimo_producto:
@@ -351,7 +348,7 @@ with tab0:
             with cg:
                 if lg:
                     pdf_g = generar_carteles_gigantes(lg)
-                    st.download_button("⬇ nighttime Gigantes", data=pdf_g, file_name="gigantes.pdf", use_container_width=True)
+                    st.download_button("⬇️ Gigantes", data=pdf_g, file_name="gigantes.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_g, "p_g")
             with cm:
                 if lm:
@@ -436,7 +433,7 @@ with tab2:
             cant_items = len(df_tildados)
             
             st.markdown("### 📥 Impresión Rápida de Cambios:")
-            comp_g, comp_m, comp_c = st.columns(3)
+            comp_g, cm, cc = st.columns(3)
             if cant_items > 0:
                 fecha_hoy = date.today().strftime("%d/%m/%y")
                 lista_impresion_directa = [(row["Código Barra"], row["Descripcion"], row["Precio_Nuevo"], fecha_hoy) for _, row in df_tildados.iterrows()]
@@ -444,15 +441,15 @@ with tab2:
                     pdf_comp_g = generar_carteles_gigantes(lista_impresion_directa)
                     st.download_button("⬇️ Carteles Gigantes", data=pdf_comp_g, file_name="gigantes.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_comp_g, "print_comp_g")
-                with comp_m:
+                with cm:
                     pdf_comp_m = generar_precios_medianos(lista_impresion_directa)
                     st.download_button("⬇️ Precios Medianos", data=pdf_comp_m, file_name="medianos.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_comp_m, "print_comp_m")
-                with comp_c:
+                with cc:
                     pdf_comp_c = generar_etiquetas_chicas(lista_impresion_directa)
                     st.download_button("⬇️ Etiquetas Chicas", data=pdf_comp_c, file_name="chicas.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_comp_c, "print_comp_c")
             else:
                 with comp_g: st.info("🔴 Seleccioná ítems")
-                with comp_m: st.info("🔵 Seleccioná ítems")
-                with comp_c: st.info("🟢 Seleccioná ítems")
+                with cm: st.info("🔵 Seleccioná ítems")
+                with cc: st.info("🟢 Seleccioná ítems")
