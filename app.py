@@ -59,9 +59,7 @@ def wrap_text_to_width(text, font_name, font_size, max_width):
 # FUNCIÓN INYECTADORA DE IMPRESIÓN DIRECTA
 # =========================================================================
 def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
-    """Genera un botón que abre el PDF limpio en una pestaña nueva y lanza la impresión en el acto"""
     base64_pdf = base64.b64encode(bytes_pdf).decode('utf-8')
-    
     componente_html = f"""
     <script>
         function ejecutarImpresion() {{
@@ -73,7 +71,6 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
             var byteArray = new Uint8Array(byteNumbers);
             var blob = new Blob([byteArray], {{type: 'application/pdf'}});
             var fileURL = URL.createObjectURL(blob);
-            
             var win = window.open(fileURL);
             if (win) {{
                 setTimeout(function() {{
@@ -81,22 +78,14 @@ def embeber_e_imprimir_pdf(bytes_pdf, key_boton):
                     win.print();
                 }}, 300);
             }} else {{
-                alert("❌ Por favor habilitá las ventanas emergentes (pop-ups) en tu navegador para imprimir directo.");
+                alert("❌ Por favor habilitá las ventanas emergentes (pop-ups).");
             }}
         }}
     </script>
     <button onclick="ejecutarImpresion()" style="
-        width: 100%;
-        height: 45px;
-        background-color: #FF9800;
-        color: white;
-        border: none;
-        font-size: 16px;
-        font-weight: bold;
-        border-radius: 8px;
-        cursor: pointer;
-        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
-        margin-top: 5px;
+        width: 100%; height: 45px; background-color: #FF9800; color: white;
+        border: none; font-size: 16px; font-weight: bold; border-radius: 8px;
+        cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); margin-top: 5px;
     ">🖨️ Mandar a Imprimir Directo</button>
     """
     st.components.v1.html(componente_html, height=60)
@@ -244,27 +233,6 @@ def generar_etiquetas_chicas(products_list):
 # =========================================================================
 st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 
-# Interceptador F11 de PC invariable y blindado
-st.components.v1.html("""
-<script>
-    window.parent.document.addEventListener('keydown', function(e) {
-        if (e.key === 'F11' || e.keyCode === 122) {
-            e.preventDefault(); 
-            setTimeout(function() {
-                var inputBuscador = window.parent.document.querySelector('input[type="text"]');
-                if (inputBuscador) {
-                    inputBuscador.dispatchEvent(new Event('change', { bubbles: true }));
-                    var eventoEnter = new KeyboardEvent('keydown', {
-                        bubbles: true, cancelable: true, key: 'Enter', keyCode: 13, which: 13
-                    });
-                    inputBuscador.dispatchEvent(eventoEnter);
-                }
-            }, 5);
-        }
-    });
-</script>
-""", height=0)
-
 st.html("""
 <style>
     button[data-testid="stMarkdownContainer"] p { font-size: 16px !important; font-weight: bold !important; }
@@ -294,12 +262,11 @@ with tab0:
                 next(reader)
                 lista = []
                 for r in reader:
-                    if not r or len(r) < 3: continue
+                    if not r or len(r) < 4: continue
                     sku_orig = r[0].strip()
                     desc = fix_encoding(r[1].strip())
                     precio = r[2].strip()
                     id_orig = r[3].strip() if len(r) > 3 else ""
-                    
                     lista.append({
                         "SKU_Original": sku_orig, 
                         "SKU_Norm": sku_orig.replace(".", "").lstrip("0").lower(),
@@ -315,14 +282,15 @@ with tab0:
     df_drive = descargar_base_estatica(URL_DRIVE)
     
     if df_drive is None or df_drive.empty:
-        st.error("⚠️ Error cargando base de datos estática.")
+        st.error("⚠️ Error cargando base de datos.")
         df_drive = pd.DataFrame()
     else:
-        st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché RAM.")
+        st.caption(f"🟢 Motor de Alta Velocidad Activo: {len(df_drive)} artículos en caché.")
 
     st.markdown("### 🎛️ Configuración de Tanda de Escaneo:")
-    tamanio_elegido = st.radio("Seleccioná qué tamaño querés que se guarde automáticamente al escanear:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
+    tamanio_elegido = st.radio("Seleccioná qué tamaño:", ["🟢 Chico", "🔵 Mediano", "🔴 Gigante"], horizontal=True)
 
+    # REPARACIÓN BLINDADA: Busca por ambos campos y valida que no venga vacío para que no crashee jamás
     def procesar_colector_veloz():
         query_cruda = st.session_state.colector_input.strip()
         if query_cruda:
@@ -330,109 +298,75 @@ with tab0:
             if query_norm:
                 condicion = (df_drive["SKU_Norm"] == query_norm) | (df_drive["Id_Norm"] == query_norm)
                 resultados = df_drive[condicion]
-                
                 if not resultados.empty:
                     prod = resultados.iloc[0]
-                    codigo_impresion = prod['SKU_Original']
-                    tipo_str = tamanio_elegido.split(" ")[1]
-                    
                     st.session_state.cola_impresion.append((
-                        codigo_impresion, prod["Descripción"], prod["Precio Crudo"], prod["Fecha"], tipo_str
+                        str(prod['SKU_Original']), str(prod["Descripción"]), str(prod["Precio Crudo"]), str(prod["Fecha"]), str(tamanio_elegido.split(" ")[1])
                     ))
-                    
-                    st.session_state.cola_impresion = sorted(st.session_state.cola_impresion, key=lambda x: x[1].lower())
-                    st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']} ({tamanio_elegido}) - {format_price_arg(prod['Precio Crudo'])}"
+                    st.session_state.ultimo_producto = f"✅ Agregado: {prod['Descripción']}"
                 else:
-                    st.session_state.ultimo_producto = f"❌ Código no encontrado: '{query_cruda}'"
-        
+                    st.session_state.ultimo_producto = f"❌ Código no encontrado en la base: '{query_cruda}'"
         st.session_state.colector_input = ""
 
-    st.text_input("🔎 ESCANEÁ ACÁ (MODO CORRELATIVO CONSTANTE):", key="colector_input", on_change=procesar_colector_veloz, placeholder="Hacé foco acá y pasá los códigos de corrido...")
+    st.text_input("🔎 ESCANEÁ ACÁ:", key="colector_input", on_change=procesar_colector_veloz)
 
     if st.session_state.ultimo_producto:
         st.info(st.session_state.ultimo_producto)
 
     if st.session_state.cola_impresion:
-        st.write("---")
-        st.subheader("📋 Lista Correlativa de Impresión Actual (Ordenada Alfabéticamente)")
-        
         df_cola = pd.DataFrame(st.session_state.cola_impresion, columns=["Código Barra", "Descripción", "Precio", "Fecha", "Tamaño"])
         df_cola.insert(0, "Quitar ❌", True)
-        
-        edited_cola = st.data_editor(
-            df_cola, 
-            column_config={
-                "Quitar ❌": st.column_config.CheckboxColumn(default=True),
-                "Descripción": st.column_config.TextColumn(width=450)
-            }, 
-            disabled=["Código Barra", "Descripción", "Precio", "Fecha", "Tamaño"], 
-            hide_index=True, 
-            use_container_width=True, 
-            key="tabla_viva"
-        )
+        edited_cola = st.data_editor(df_cola, hide_index=True, use_container_width=True, key="tabla_viva")
         st.session_state.cola_impresion = [(row["Código Barra"], row["Descripción"], row["Precio"], row["Fecha"], row["Tamaño"]) for _, row in edited_cola[edited_cola["Quitar ❌"] == True].iterrows()]
         
         if st.session_state.cola_impresion:
             lg = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Gigante"]
             lm = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Mediano"]
             lc = [x[:4] for x in st.session_state.cola_impresion if x[4] == "Chico"]
-            
-            st.markdown("### 📥 Panel de Salida Masiva:")
             cg, cm, cc = st.columns(3)
             with cg:
                 if lg:
-                    st.write(f"**🔴 GIGANTES ({len(lg)})**")
                     pdf_g = generar_carteles_gigantes(lg)
-                    st.download_button("⬇️ Descargar", data=pdf_g, file_name="gigantes.pdf", mime="application/pdf", use_container_width=True, key="f_g")
+                    st.download_button("⬇️ Gigantes", data=pdf_g, file_name="gigantes.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_g, "p_g")
             with cm:
                 if lm:
-                    st.write(f"**🔵 MEDIANOS ({len(lm)})**")
                     pdf_m = generar_precios_medianos(lm)
-                    st.download_button("⬇️ Descargar", data=pdf_m, file_name="medianos.pdf", mime="application/pdf", use_container_width=True, key="f_m")
+                    st.download_button("⬇️ Medianos", data=pdf_m, file_name="medianos.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_m, "p_m")
             with cc:
                 if lc:
-                    st.write(f"**🟢 CHICOS ({len(lc)})**")
                     pdf_c = generar_etiquetas_chicas(lc)
-                    st.download_button("⬇️ Descargar", data=pdf_c, file_name="chicos.pdf", mime="application/pdf", use_container_width=True, key="f_c")
+                    st.download_button("⬇️ Chicos", data=pdf_c, file_name="chicos.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_c, "p_c")
 
-# Pestañas complementarias intactas
 with tab1:
     st.subheader("1. Arrastrá tu archivo de precios")
     uploaded_file = st.file_uploader("Subir CSV de Precios", type=["csv"], key="unificado_etiquetas")
     if uploaded_file:
         try:
-            bytes_data = uploaded_file.getvalue()
-            content = bytes_data.decode("latin1")
+            content = uploaded_file.getvalue().decode("latin1")
             reader = csv.reader(content.splitlines())
             parsed_products = []
             for r in reader:
-                if not r: continue
-                if len(r) < 3: raise ValueError("Estructura inválida.")
+                if not r or len(r) < 3: continue
                 r_ext = list(r) + [""] * (5 - len(r))
-                sku = r_ext[2].strip()
-                parsed_products.append({"Imprimir": True, "SKU": sku if sku else "S/C", "Descripción": fix_encoding(r_ext[1].strip().strip('"')), "Precio Crudo": r_ext[0].strip(), "Fecha": r_ext[4].strip()})
+                parsed_products.append({"Imprimir": True, "SKU": r_ext[2].strip() if r_ext[2].strip() else "S/C", "Descripción": fix_encoding(r_ext[1].strip().strip('"')), "Precio Crudo": r_ext[0].strip(), "Fecha": r_ext[4].strip()})
             df_products = pd.DataFrame(parsed_products)
-            st.success(f"✅ ¡Archivo leído! {len(df_products)} productos detectados.")
-            edited_df = st.data_editor(df_products, column_config={"Imprimir": st.column_config.CheckboxColumn(default=True)}, disabled=["SKU", "Descripción", "Precio Crudo", "Fecha"], hide_index=True, use_container_width=True)
+            edited_df = st.data_editor(df_products, hide_index=True, use_container_width=True)
             df_filtrado = edited_df[edited_df["Imprimir"] == True]
             lista_final = [(row["SKU"], row["Descripción"], row["Precio Crudo"], row["Fecha"]) for _, row in df_filtrado.iterrows()]
             
             col1, col2, col3 = st.columns(3)
             with col1:
                 pdf_csv_g = generar_carteles_gigantes(lista_final)
-                st.download_button("📥 Bajar Gigantes", data=pdf_csv_g, file_name="carteles_gigantes_a4.pdf", mime="application/pdf", use_container_width=True, key="c_g")
-                embeber_e_imprimir_pdf(pdf_csv_g, "csv_p_g")
+                st.download_button("📥 Bajar Gigantes", data=pdf_csv_g, file_name="gigantes.pdf", use_container_width=True)
             with col2:
                 pdf_csv_m = generar_precios_medianos(lista_final)
-                st.download_button("📥 Bajar Medianos", data=pdf_csv_m, file_name="precios_medianos_10x7.pdf", mime="application/pdf", use_container_width=True, key="c_m")
-                embeber_e_imprimir_pdf(pdf_csv_m, "csv_p_m")
+                st.download_button("📥 Bajar Medianos", data=pdf_csv_m, file_name="medianos.pdf", use_container_width=True)
             with col3:
                 pdf_csv_c = generar_etiquetas_chicas(lista_final)
-                st.download_button("📥 Bajar Chicas", data=pdf_csv_c, file_name="etiquetas_chicas_7x35.pdf", mime="application/pdf", use_container_width=True, key="c_c")
-                embeber_e_imprimir_pdf(pdf_csv_c, "csv_p_c")
+                st.download_button("📥 Bajar Chicas", data=pdf_csv_c, file_name="chicas.pdf", use_container_width=True)
         except Exception as e: st.error(f"❌ Error: {e}")
 
 with tab2:
@@ -451,7 +385,6 @@ with tab2:
                 
                 def cargar_df_crudo(p):
                     df = pd.read_csv(p, sep=",", header=None, engine="python", dtype=str)
-                    if df.shape[1] < 15: raise IndexError("Estructura inválida.")
                     df_res = pd.DataFrame({"SKU_Interno": df[9], "Codigo_Barra": df[0], "Descripcion": df[10], "Precio": df[14]})
                     df_res["Precio_num"] = df_res["Precio"].apply(normalizar_precio)
                     return df_res
@@ -464,66 +397,36 @@ with tab2:
                 changed = merged[merged["Precio_old"] != merged["Precio_num"]]
                 
                 df_final = changed[["Codigo_Barra", "Descripcion", "Precio_old", "Precio"]].rename(columns={"Codigo_Barra": "Código Barra", "Precio": "Precio_Nuevo", "Precio_old": "Precio_Anterior"})
-                
                 df_final["Descripcion_upper"] = df_final["Descripcion"].fillna("").str.upper()
                 df_final = df_final.sort_values("Descripcion_upper").drop(columns=["Descripcion_upper"])
                 
                 st.session_state.df_comparativa = df_final.copy()
                 st.session_state.df_comparativa.insert(0, "🖨️ Seleccionar", False)
                 st.success(f"¡Se encontraron {len(df_final)} productos con cambios!")
-                
-            except Exception as e: 
-                st.error(f"❌ Error interno en la estructura del archivo: {e}")
+            except Exception as e: st.error(f"❌ Error en archivos: {e}")
 
         if "df_comparativa" in st.session_state and not st.session_state.df_comparativa.empty:
             st.markdown("### 📋 Listado de Cambios Detectados")
-            st.caption("Tildá los productos específicos que querés mandar a la tanda de impresión masiva de abajo:")
-            
-            # SOLUCIÓN COMPLETA AL PANTALLAZO GRIS: Usamos objetos de configuración nativos súper limpios que no rompen el validador métrico
-            edited_comp = st.data_editor(
-                st.session_state.df_comparativa,
-                column_config={
-                    "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False),
-                    "Código Barra": st.column_config.TextColumn(),
-                    "Descripcion": st.column_config.TextColumn(title="Descripción del Producto"),
-                    "Precio_Anterior": st.column_config.TextColumn(),
-                    "Precio_Nuevo": st.column_config.TextColumn()
-                },
-                disabled=["Código Barra", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
-                hide_index=True,
-                use_container_width=True,
-                key="tabla_edicion_comparativa"
-            )
-            
+            edited_comp = st.data_editor(st.session_state.df_comparativa, hide_index=True, use_container_width=True, key="tabla_edicion_comparativa")
             df_tildados = edited_comp[edited_comp["🖨️ Seleccionar"] == True]
             cant_items = len(df_tildados)
             
             st.markdown("### 📥 Impresión Rápida de Cambios:")
             comp_g, comp_m, comp_c = st.columns(3)
-            
             if cant_items > 0:
                 fecha_hoy = date.today().strftime("%d/%m/%y")
-                lista_impresion_directa = [
-                    (row["Código Barra"], row["Descripcion"], row["Precio_Nuevo"], fecha_hoy) 
-                    for _, row in df_tildados.iterrows()
-                ]
-                
+                lista_impresion_directa = [(row["Código Barra"], row["Descripcion"], row["Precio_Nuevo"], fecha_hoy) for _, row in df_tildados.iterrows()]
                 with comp_g:
-                    st.write(f"**🔴 Carteles Gigantes ({cant_items})**")
                     pdf_comp_g = generar_carteles_gigantes(lista_impresion_directa)
-                    st.download_button("⬇️ Descargar PDF", data=pdf_comp_g, file_name="cambios_gigantes.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_g")
+                    st.download_button("⬇️ Carteles Gigantes", data=pdf_comp_g, file_name="gigantes.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_comp_g, "print_comp_g")
-                    
                 with comp_m:
-                    st.write(f"**🔵 Precios Medianos ({cant_items})**")
                     pdf_comp_m = generar_precios_medianos(lista_impresion_directa)
-                    st.download_button("⬇️ Descargar PDF", data=pdf_comp_m, file_name="cambios_medianos.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_m")
+                    st.download_button("⬇️ Precios Medianos", data=pdf_comp_m, file_name="medianos.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_comp_m, "print_comp_m")
-                    
                 with comp_c:
-                    st.write(f"**🟢 Etiquetas Chicas ({cant_items})**")
                     pdf_comp_c = generar_etiquetas_chicas(lista_impresion_directa)
-                    st.download_button("⬇️ Descargar PDF", data=pdf_comp_c, file_name="cambios_chicas.pdf", mime="application/pdf", use_container_width=True, key="dl_comp_c")
+                    st.download_button("⬇️ Etiquetas Chicas", data=pdf_comp_c, file_name="chicas.pdf", use_container_width=True)
                     embeber_e_imprimir_pdf(pdf_comp_c, "print_comp_c")
             else:
                 with comp_g: st.info("🔴 Seleccioná ítems")
