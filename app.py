@@ -15,11 +15,6 @@ from reportlab.pdfgen import canvas
 ID_DRIVE = "1z1naxcQyryThMHj3H9K3xi27EDuugBPnFKrrwrJ8v1Y"
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{ID_DRIVE}/export?format=csv"
 
-# Pegá aquí la URL /exec del Apps Script después de publicarlo como Aplicación web.
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz0OWTNE36CjN2MB7cHwfA55DVhZNl5iJ7t-3fCPgQhRSLSJMwIpAsq_DWREESQGnh0/exec"
-# Debe ser exactamente la misma clave configurada en Codigo.gs.
-APPS_SCRIPT_TOKEN = "Cotyland_2026_Etiquetas_7K9mP4xQ"
-
 
 # =========================================================================
 # FUNCIONES DE ARREGLO Y DECODIFICACIÓN
@@ -99,7 +94,7 @@ def normalize_code(value: str) -> str:
     """Normaliza únicamente para comparar/buscar, sin alterar lo que se imprime."""
     if value is None:
         return ""
-    return str(value).strip().casefold()
+    return str(value).strip().replace(".", "").lstrip("0").lower()
 
 
 def dataframe_matches_search(df: pd.DataFrame, query: str, columns: list[str]) -> pd.Series:
@@ -133,81 +128,6 @@ def update_selection_from_editor(
     )
     st.session_state[state_key] = current_df
 
-
-
-def seguimiento_configurado() -> bool:
-    return (
-        APPS_SCRIPT_URL.startswith("https://script.google.com/")
-        and APPS_SCRIPT_URL.endswith("/exec")
-        and bool(APPS_SCRIPT_TOKEN.strip())
-    )
-
-
-@st.cache_data(ttl=30)
-def cargar_etiquetas_seguidas() -> pd.DataFrame:
-    columns = ["Codigo_Barra", "IdArticulo"]
-    if not seguimiento_configurado():
-        return pd.DataFrame(columns=columns)
-
-    try:
-        response = requests.get(
-            APPS_SCRIPT_URL,
-            params={"token": APPS_SCRIPT_TOKEN},
-            timeout=20,
-        )
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            raise RuntimeError(data.get("error", "Respuesta inválida del Apps Script"))
-        result = pd.DataFrame(data.get("items", []), columns=columns)
-        if result.empty:
-            return pd.DataFrame(columns=columns)
-        result["Codigo_Barra"] = result["Codigo_Barra"].fillna("").astype(str)
-        result["IdArticulo"] = result["IdArticulo"].fillna("").astype(str)
-        return result
-    except Exception:
-        return pd.DataFrame(columns=columns)
-
-
-def actualizar_etiquetas_seguidas(agregar=None, eliminar=None):
-    if not seguimiento_configurado():
-        return False, "Falta configurar la URL /exec y la clave del Apps Script en app.py."
-
-    payload = {
-        "token": APPS_SCRIPT_TOKEN,
-        "agregar": agregar or [],
-        "eliminar": eliminar or [],
-    }
-    try:
-        response = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            return False, data.get("error", "El Apps Script rechazó la operación.")
-        cargar_etiquetas_seguidas.clear()
-        return True, f"Base actualizada: {int(data.get('total', 0))} productos en seguimiento."
-    except Exception as exc:
-        return False, f"No se pudo actualizar la base de seguimiento: {exc}"
-
-
-def item_en_seguimiento(codigo, id_articulo, seguimiento_df):
-    if seguimiento_df is None or seguimiento_df.empty:
-        return False
-    codigo_norm = normalize_code(codigo)
-    id_norm = normalize_code(id_articulo)
-    codigos = seguimiento_df["Codigo_Barra"].fillna("").astype(str).map(normalize_code)
-    ids = seguimiento_df["IdArticulo"].fillna("").astype(str).map(normalize_code)
-    return bool(
-        (codigo_norm and (codigos == codigo_norm).any())
-        or (id_norm and (ids == id_norm).any())
-    )
-
-
-def registro_seguimiento(codigo, id_articulo):
-    return {
-        "Codigo_Barra": str(codigo or "").strip(),
-        "IdArticulo": str(id_articulo or "").strip(),
-    }
 
 # =========================================================================
 # FUNCIÓN INYECTORA DE IMPRESIÓN DIRECTA
@@ -610,7 +530,6 @@ def parse_csv_labels(uploaded_file) -> pd.DataFrame:
             ["código de barras", "codigo de barras", "codigobarra", "barcode", "ean"]
         )
         date_index = find_header_index(["fecha"])
-        article_id_index = find_header_index(["idarticulo", "id articulo", "id_articulo", "sku"])
         data_rows = rows[1:]
 
         if barcode_index is None:
@@ -623,7 +542,6 @@ def parse_csv_labels(uploaded_file) -> pd.DataFrame:
         price_index = 0
         description_index = 1
         barcode_index = 3
-        article_id_index = 2
         date_index = 4
         data_rows = rows
 
@@ -634,7 +552,7 @@ def parse_csv_labels(uploaded_file) -> pd.DataFrame:
 
         required_indexes = [
             index
-            for index in (price_index, description_index, barcode_index, article_id_index, date_index)
+            for index in (price_index, description_index, barcode_index, date_index)
             if index is not None
         ]
         max_index = max(required_indexes, default=0)
@@ -649,7 +567,6 @@ def parse_csv_labels(uploaded_file) -> pd.DataFrame:
             else ""
         )
         price = row_extended[price_index].strip() if price_index is not None else ""
-        article_id = (row_extended[article_id_index].strip() if article_id_index is not None else "")
         label_date = (
             row_extended[date_index].strip() if date_index is not None else ""
         )
@@ -664,8 +581,7 @@ def parse_csv_labels(uploaded_file) -> pd.DataFrame:
             {
                 "_id": row_number,
                 "Imprimir": True,
-                "Código de barras": barcode if barcode else (article_id if article_id else "S/C"),
-                "IdArticulo": article_id,
+                "Código de barras": barcode if barcode else "S/C",
                 "Descripción": description,
                 "Precio Crudo": price,
                 "Fecha": label_date,
@@ -771,39 +687,22 @@ st.set_page_config(page_title="Cotyland Nube", page_icon="🎈", layout="wide")
 st.components.v1.html(
     """
 <script>
-    (function () {
-        const doc = window.parent.document;
-
-        function enfocarEscaner() {
-            const inputs = Array.from(doc.querySelectorAll('input[type="text"]'));
-            const box = inputs.find(el =>
-                (el.getAttribute('aria-label') || '').includes('ESCANEÁ ACÁ')
-            );
-            if (box && !box.disabled) box.focus();
+    function frenarPantallaCompleta(e) {
+        if (e.key === 'F11' || e.keyCode === 122) {
+            e.preventDefault();
+            e.stopPropagation();
+            setTimeout(function() {
+                var box = window.parent.document.querySelector('input[type="text"]');
+                if (box) {
+                    box.focus();
+                    box.dispatchEvent(new Event('change', { bubbles: true }));
+                    var evEnter = new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', keyCode: 13 });
+                    box.dispatchEvent(evEnter);
+                }
+            }, 10);
         }
-
-        function bloquearAtajosDelLector(e) {
-            const key = (e.key || '').toLowerCase();
-            const bloqueado =
-                key === 'f11' || e.keyCode === 122 ||
-                ((e.ctrlKey || e.metaKey) && ['w', 't', 'n'].includes(key)) ||
-                (e.altKey && ['arrowleft', 'arrowright', 'home'].includes(key));
-
-            if (bloqueado) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                setTimeout(enfocarEscaner, 10);
-                return false;
-            }
-        }
-
-        if (!window.parent.__cotylandScannerLockInstalled) {
-            doc.addEventListener('keydown', bloquearAtajosDelLector, true);
-            window.parent.__cotylandScannerLockInstalled = true;
-        }
-
-        setTimeout(enfocarEscaner, 150);
-    })();
+    }
+    window.parent.document.addEventListener('keydown', frenarPantallaCompleta, true);
 </script>
 """,
     height=0,
@@ -820,11 +719,6 @@ st.html(
 )
 
 st.title("🎈 Cotyland - Panel Multiplataforma")
-if not seguimiento_configurado():
-    st.warning(
-        "La base ETIQUETAS_SEGUIDAS todavía no está conectada. "
-        "Configurá APPS_SCRIPT_URL y APPS_SCRIPT_TOKEN en app.py."
-    )
 tab0, tab1, tab2 = st.tabs(
     ["📱 Buscador Móvil", "🖨️ Generador de Etiquetas (CSV)", "📊 Comparador de Precios"]
 )
@@ -834,6 +728,8 @@ if "cola_impresion" not in st.session_state:
     st.session_state.cola_impresion = []
 if "ultimo_producto" not in st.session_state:
     st.session_state.ultimo_producto = ""
+if "duplicado_pendiente" not in st.session_state:
+    st.session_state.duplicado_pendiente = None
 if "scanner_pdf" not in st.session_state:
     st.session_state.scanner_pdf = None
 if "scanner_pdf_name" not in st.session_state:
@@ -858,7 +754,6 @@ with tab0:
             {
                 "Imprimir": True,
                 "Código de barras": str(product["Código de barras"]).strip(),
-                "IdArticulo": str(product.get("Id_Articulo", "")).strip(),
                 "Descripción": product["Descripción"],
                 "Precio": product["Precio Crudo"],
                 "Fecha": product["Fecha"],
@@ -873,46 +768,77 @@ with tab0:
         st.session_state.scanner_pdf = None
         st.session_state.scanner_pdf_name = ""
 
-    # Se usa una clave rotativa para el campo del lector. Así no se modifica
-    # el mismo widget que acaba de disparar el evento, algo que puede provocar
-    # un error fatal en determinadas versiones de Streamlit.
-    if "scanner_input_version" not in st.session_state:
-        st.session_state.scanner_input_version = 0
+    def procesar_colector_veloz():
+        raw_query = st.session_state.get("colector_input", "").strip()
+        st.session_state.colector_input = ""
 
-    scanner_input_key = f"colector_input_{st.session_state.scanner_input_version}"
+        if not raw_query or df_drive.empty:
+            return
 
-    def procesar_colector_veloz(input_key=scanner_input_key):
-        raw_query = str(st.session_state.get(input_key, "")).strip()
+        query_norm = normalize_code(raw_query.replace("F11", ""))
+        if not query_norm:
+            return
 
-        if raw_query and not df_drive.empty:
-            query_norm = normalize_code(raw_query.replace("F11", ""))
+        condition = (df_drive["Código_Norm"] == query_norm) | (
+            df_drive["Id_Norm"] == query_norm
+        )
+        results = df_drive[condition]
 
-            if query_norm:
-                condition = (df_drive["Código_Norm"] == query_norm) | (
-                    df_drive["Id_Norm"] == query_norm
-                )
-                results = df_drive[condition]
+        if results.empty:
+            st.session_state.ultimo_producto = (
+                f"❌ Código no encontrado: '{raw_query}'"
+            )
+            return
 
-                if results.empty:
-                    st.session_state.ultimo_producto = (
-                        f"❌ Código no encontrado: '{raw_query}'"
-                    )
-                else:
-                    product = results.iloc[0].to_dict()
-                    # Cada lectura genera una etiqueta, incluso cuando el mismo
-                    # artículo se escanea varias veces.
-                    agregar_producto_a_cola(product)
+        product = results.iloc[0].to_dict()
+        barcode_norm = normalize_code(product["Código de barras"])
+        already_exists = any(
+            normalize_code(item["Código de barras"]) == barcode_norm
+            for item in st.session_state.cola_impresion
+        )
 
-        # La próxima ejecución dibuja un campo nuevo y vacío. No se toca el
-        # valor del widget que disparó este callback.
-        st.session_state.scanner_input_version += 1
+        if already_exists:
+            st.session_state.duplicado_pendiente = product
+            st.session_state.ultimo_producto = ""
+        else:
+            agregar_producto_a_cola(product)
 
     st.text_input(
         "🔎 ESCANEÁ ACÁ (MODO CORRELATIVO CONSTANTE):",
-        key=scanner_input_key,
+        key="colector_input",
         on_change=procesar_colector_veloz,
         placeholder="Hacé foco acá y pasá los códigos de corrido...",
+        disabled=st.session_state.duplicado_pendiente is not None,
     )
+
+    if st.session_state.duplicado_pendiente is not None:
+        duplicate = st.session_state.duplicado_pendiente
+        st.warning(
+            "Este producto ya fue agregado.\n\n"
+            f"**{duplicate['Descripción']}**  |  "
+            f"{format_price_arg(duplicate['Precio Crudo'])}  |  "
+            f"Código: {duplicate['Código de barras']}"
+        )
+        duplicate_add_col, duplicate_ignore_col = st.columns(2)
+        with duplicate_add_col:
+            if st.button(
+                "➕ Agregar otra etiqueta",
+                type="primary",
+                use_container_width=True,
+                key="duplicate_add",
+            ):
+                agregar_producto_a_cola(duplicate)
+                st.session_state.duplicado_pendiente = None
+                st.rerun()
+        with duplicate_ignore_col:
+            if st.button(
+                "Ignorar",
+                use_container_width=True,
+                key="duplicate_ignore",
+            ):
+                st.session_state.duplicado_pendiente = None
+                st.session_state.ultimo_producto = "Producto duplicado ignorado."
+                st.rerun()
 
     if st.session_state.ultimo_producto:
         if st.session_state.ultimo_producto.startswith("✔"):
@@ -978,7 +904,7 @@ with tab0:
                 "Imprimir": st.column_config.CheckboxColumn(default=True),
                 "_id": None,
             },
-            disabled=["Código de barras", "IdArticulo", "Descripción", "Precio", "Fecha"],
+            disabled=["Código de barras", "Descripción", "Precio", "Fecha"],
             hide_index=True,
             use_container_width=True,
             key="tabla_viva_scanner",
@@ -1024,16 +950,6 @@ with tab0:
             )
             st.session_state.scanner_pdf = pdf_bytes
             st.session_state.scanner_pdf_name = pdf_name
-            tracking_items = [
-                registro_seguimiento(item["Código de barras"], item.get("IdArticulo", ""))
-                for item in selected_scanner
-            ]
-            ok, message = actualizar_etiquetas_seguidas(agregar=tracking_items)
-            st.session_state.scanner_tracking_message = (ok, message)
-
-        if "scanner_tracking_message" in st.session_state:
-            ok, message = st.session_state.scanner_tracking_message
-            (st.success if ok else st.warning)(message)
 
         if st.session_state.scanner_pdf:
             st.download_button(
@@ -1097,7 +1013,7 @@ with tab1:
                 dataframe_matches_search(
                     df_products,
                     csv_search,
-                    ["Código de barras", "IdArticulo", "Descripción", "Precio Crudo", "Fecha"],
+                    ["Código de barras", "Descripción", "Precio Crudo", "Fecha"],
                 )
             ].copy()
 
@@ -1107,7 +1023,7 @@ with tab1:
                     "Imprimir": st.column_config.CheckboxColumn(default=True),
                     "_id": None,
                 },
-                disabled=["Código de barras", "IdArticulo", "Descripción", "Precio Crudo", "Fecha"],
+                disabled=["Código de barras", "Descripción", "Precio Crudo", "Fecha"],
                 hide_index=True,
                 use_container_width=True,
                 key="csv_products_editor",
@@ -1130,18 +1046,6 @@ with tab1:
             ]
 
             if final_list:
-                if st.button(
-                    f"Guardar {len(selected_csv)} seleccionados en la base de seguimiento",
-                    use_container_width=True,
-                    key="csv_save_tracking",
-                ):
-                    tracking_items = [
-                        registro_seguimiento(row["Código de barras"], row.get("IdArticulo", ""))
-                        for _, row in selected_csv.iterrows()
-                    ]
-                    ok, message = actualizar_etiquetas_seguidas(agregar=tracking_items)
-                    (st.success if ok else st.warning)(message)
-
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     pdf_csv_g = generar_carteles_gigantes(final_list)
@@ -1201,8 +1105,6 @@ with tab2:
                 df_a = cargar_df_comparador(file_a)
                 df_b = cargar_df_comparador(file_b)
                 df_old, df_new = detectar_lista_vieja_y_nueva(df_a, df_b)
-                seguimiento_df = cargar_etiquetas_seguidas()
-                base_lookup = descargar_base_estatica(URL_DRIVE)
 
                 merged = pd.merge(
                     df_old[["Codigo_Barra", "Precio_num"]].rename(
@@ -1220,27 +1122,14 @@ with tab2:
                     != merged["Precio_num"].round(4)
                 ].copy()
 
-                # Usamos las columnas numéricas para comparar, calcular la diferencia
-                # y decidir si el precio subió o bajó. La columna "Precio" original
-                # viene como texto desde el CSV y no puede restarse con un float.
                 final_df = changed[
-                    ["Codigo_Barra", "Descripcion", "Precio_old", "Precio_num"]
+                    ["Codigo_Barra", "Descripcion", "Precio_old", "Precio"]
                 ].rename(
                     columns={
                         "Codigo_Barra": "Código Barra",
-                        "Precio_num": "Precio_Nuevo",
+                        "Precio": "Precio_Nuevo",
                         "Precio_old": "Precio_Anterior",
                     }
-                )
-
-                final_df["Cambio"] = final_df.apply(
-                    lambda row: "⬆️ Subió"
-                    if row["Precio_Nuevo"] > row["Precio_Anterior"]
-                    else "⬇️ Bajó",
-                    axis=1,
-                )
-                final_df["Diferencia"] = (
-                    final_df["Precio_Nuevo"] - final_df["Precio_Anterior"]
                 )
 
                 final_df["Desc_Upper"] = (
@@ -1250,32 +1139,8 @@ with tab2:
                     columns=["Desc_Upper"]
                 )
                 final_df = final_df.reset_index(drop=True)
-
-                def buscar_id_articulo(codigo):
-                    if base_lookup.empty:
-                        return ""
-                    codigo_norm = normalize_code(codigo)
-                    coincidencias = base_lookup[
-                        (base_lookup["Código_Norm"] == codigo_norm)
-                        | (base_lookup["Id_Norm"] == codigo_norm)
-                    ]
-                    if coincidencias.empty:
-                        return ""
-                    return str(coincidencias.iloc[0].get("Id_Articulo", "")).strip()
-
-                final_df["IdArticulo"] = final_df["Código Barra"].map(buscar_id_articulo)
-                final_df["_Estaba_en_base"] = final_df.apply(
-                    lambda row: item_en_seguimiento(
-                        row["Código Barra"], row["IdArticulo"], seguimiento_df
-                    ),
-                    axis=1,
-                )
                 final_df.insert(0, "_id", range(len(final_df)))
-                final_df.insert(1, "🖨️ Seleccionar", final_df["_Estaba_en_base"])
-                final_df.insert(2, "⭐ Seguir en base", final_df["_Estaba_en_base"])
-                final_df["Estado base"] = final_df["_Estaba_en_base"].map(
-                    {True: "🟢 Ya guardado", False: "⚪ No guardado"}
-                )
+                final_df.insert(1, "🖨️ Seleccionar", False)
 
                 st.session_state.df_comparativa = final_df
                 st.success(
@@ -1319,80 +1184,39 @@ with tab2:
                     dataframe_matches_search(
                         comparative_df,
                         comp_search,
-                        ["Código Barra", "Descripcion", "Cambio", "Precio_Anterior", "Precio_Nuevo", "Diferencia"],
+                        ["Código Barra", "Descripcion", "Precio_Anterior", "Precio_Nuevo"],
                     )
                 ].copy()
 
                 edited_comp = st.data_editor(
                     visible_comp,
                     column_config={
-                        "🖨️ Seleccionar": st.column_config.CheckboxColumn(default=False),
-                        "⭐ Seguir en base": st.column_config.CheckboxColumn(default=False),
+                        "🖨️ Seleccionar": st.column_config.CheckboxColumn(
+                            default=False
+                        ),
                         "_id": None,
-                        "_Estaba_en_base": None,
                     },
                     disabled=[
                         "Código Barra",
-                        "IdArticulo",
-                        "Estado base",
                         "Descripcion",
-                        "Cambio",
                         "Precio_Anterior",
                         "Precio_Nuevo",
-                        "Diferencia",
                     ],
                     hide_index=True,
                     use_container_width=True,
                     key="tabla_edicion_comparativa",
                 )
                 update_selection_from_editor(
-                    "df_comparativa", edited_comp, "_id", "🖨️ Seleccionar"
-                )
-                update_selection_from_editor(
-                    "df_comparativa", edited_comp, "_id", "⭐ Seguir en base"
+                    "df_comparativa",
+                    edited_comp,
+                    "_id",
+                    "🖨️ Seleccionar",
                 )
 
                 selected_comp = st.session_state.df_comparativa[
                     st.session_state.df_comparativa["🖨️ Seleccionar"] == True
                 ]
                 selected_count = len(selected_comp)
-
-                if st.button(
-                    "Guardar seguimiento y preparar impresión",
-                    type="primary",
-                    use_container_width=True,
-                    key="comp_sync_tracking",
-                ):
-                    current = st.session_state.df_comparativa
-                    agregar = []
-                    eliminar = []
-                    for _, row in current.iterrows():
-                        registro = registro_seguimiento(row["Código Barra"], row.get("IdArticulo", ""))
-                        estaba = bool(row["_Estaba_en_base"])
-                        seguir = bool(row["⭐ Seguir en base"])
-                        imprimir = bool(row["🖨️ Seleccionar"])
-
-                        # Un producto nuevo seleccionado para imprimir se guarda automáticamente.
-                        if seguir or (imprimir and not estaba):
-                            agregar.append(registro)
-                        # Un producto que ya estaba y se destildó de seguimiento se elimina.
-                        if estaba and not seguir:
-                            eliminar.append(registro)
-
-                    ok, message = actualizar_etiquetas_seguidas(
-                        agregar=agregar, eliminar=eliminar
-                    )
-                    (st.success if ok else st.warning)(message)
-                    if ok:
-                        st.session_state.df_comparativa["_Estaba_en_base"] = st.session_state.df_comparativa.apply(
-                            lambda row: bool(row["⭐ Seguir en base"])
-                            or (bool(row["🖨️ Seleccionar"]) and not bool(row["_Estaba_en_base"])),
-                            axis=1,
-                        )
-                        st.session_state.df_comparativa["⭐ Seguir en base"] = st.session_state.df_comparativa["_Estaba_en_base"]
-                        st.session_state.df_comparativa["Estado base"] = st.session_state.df_comparativa["_Estaba_en_base"].map(
-                            {True: "🟢 Ya guardado", False: "⚪ No guardado"}
-                        )
 
                 st.markdown("### 📥 Impresión Rápida de Cambios Cruzados:")
                 comp_g, comp_m, comp_c = st.columns(3)
