@@ -16,7 +16,7 @@ ID_DRIVE = "1z1naxcQyryThMHj3H9K3xi27EDuugBPnFKrrwrJ8v1Y"
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{ID_DRIVE}/export?format=csv"
 
 # Pegá aquí la URL /exec del Apps Script después de publicarlo como Aplicación web.
-APPS_SCRIPT_URL = "PEGAR_AQUI_LA_URL_EXEC"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz0OWTNE36CjN2MB7cHwfA55DVhZNl5iJ7t-3fCPgQhRSLSJMwIpAsq_DWREESQGnh0/exec"
 # Debe ser exactamente la misma clave configurada en Codigo.gs.
 APPS_SCRIPT_TOKEN = "Cotyland_2026_Etiquetas_7K9mP4xQ"
 
