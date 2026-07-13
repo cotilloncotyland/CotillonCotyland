@@ -277,7 +277,9 @@ def compare_price_lists(source_a, source_b) -> tuple[pd.DataFrame, dict[str, int
         on="IdArticulo", how="inner", suffixes=("_Anterior", "_Nuevo"), validate="one_to_one"
     )
     changed = merged[merged["Precio_num_Anterior"].round(4).ne(merged["Precio_num_Nuevo"].round(4))].copy()
-    changed["Codigo_Impresion"] = changed["Codigo_Catalogo"].where(changed["Codigo_Catalogo"].ne(""), changed["IdArticulo"])
+    # El código de catálogo de estas listas no es el código de barras real.
+    # Se conserva IdArticulo como fallback hasta cruzar con la base de Google Sheets.
+    changed["Codigo_Impresion"] = changed["IdArticulo"]
     changed["Movimiento"] = changed.apply(lambda row: "Aumento" if row["Precio_num_Nuevo"] > row["Precio_num_Anterior"] else "Baja", axis=1)
     changed = changed.sort_values(["Descripcion", "IdArticulo"], key=lambda col: col.astype(str).str.casefold()).reset_index(drop=True)
     result = changed[["IdArticulo", "Codigo_Impresion", "Descripcion", "Precio_num_Anterior", "Precio_num_Nuevo", "Movimiento"]]
@@ -289,6 +291,26 @@ def compare_price_lists(source_a, source_b) -> tuple[pd.DataFrame, dict[str, int
         "orden": order,
     }
     return result, stats
+
+
+def apply_print_codes_from_catalog(changes: pd.DataFrame, product_base: pd.DataFrame) -> pd.DataFrame:
+    """Completa Codigo_Impresion desde la base por IdArticulo, sin alterar códigos."""
+    result = changes.copy()
+    barcode_by_id: dict[str, str] = {}
+
+    if not product_base.empty and {"IdArticulo", "Codigo_Barra"}.issubset(product_base.columns):
+        for article_value, barcode_value in product_base[["IdArticulo", "Codigo_Barra"]].itertuples(index=False, name=None):
+            article_id = "" if pd.isna(article_value) else str(article_value).strip()
+            barcode = "" if pd.isna(barcode_value) else str(barcode_value).strip()
+            key = article_id.casefold()
+            if key and barcode and key not in barcode_by_id:
+                barcode_by_id[key] = barcode
+
+    result["Codigo_Impresion"] = [
+        barcode_by_id.get(str(article_id).strip().casefold(), "") or str(article_id).strip()
+        for article_id in result["IdArticulo"]
+    ]
+    return result
 
 
 def make_product_lookup(products: pd.DataFrame) -> dict[str, dict]:
