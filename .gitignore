@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.test_deps/
+tmp/
+output/
+*.pyc
+*.zip
+*.csv
+*.xlsx
+*.json
+static/generated_pdfs/*.pdf
+.streamlit/secrets.toml

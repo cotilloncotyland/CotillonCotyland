@@ -82,8 +82,29 @@ def price_series(series: pd.Series) -> pd.Series:
     return pd.to_numeric(normalized, errors="coerce")
 
 
+def _split_token_to_width(token: str, font_name: str, font_size: int, max_width: float) -> list[str]:
+    """Divide tokens largos por ancho real, prefiriendo cortes tras separadores."""
+    parts: list[str] = []
+    remaining = token
+    while remaining and pdfmetrics.stringWidth(remaining, font_name, font_size) > max_width:
+        fitting = 0
+        for index in range(1, len(remaining) + 1):
+            if pdfmetrics.stringWidth(remaining[:index], font_name, font_size) <= max_width:
+                fitting = index
+            else:
+                break
+        fitting = max(1, fitting)
+        separator_cut = max((remaining.rfind(separator, 0, fitting) + 1 for separator in "/-."), default=0)
+        cut = separator_cut or fitting
+        parts.append(remaining[:cut])
+        remaining = remaining[cut:]
+    if remaining:
+        parts.append(remaining)
+    return parts
+
+
 def wrap_text_to_width(text: str, font_name: str, font_size: int, max_width: float) -> list[str]:
-    words = str(text).split()
+    words = [piece for word in str(text).split() for piece in _split_token_to_width(word, font_name, font_size, max_width)]
     if not words:
         return []
     lines: list[str] = []
@@ -99,6 +120,14 @@ def wrap_text_to_width(text: str, font_name: str, font_size: int, max_width: flo
     return lines
 
 
+def _ellipsize(line: str, font_name: str, font_size: int, max_width: float) -> str:
+    suffix = "..."
+    candidate = line.rstrip()
+    while candidate and pdfmetrics.stringWidth(candidate + suffix, font_name, font_size) > max_width:
+        candidate = candidate[:-1].rstrip()
+    return (candidate + suffix) if candidate else suffix
+
+
 def fit_description(
     text: str,
     max_width: float,
@@ -109,14 +138,19 @@ def fit_description(
 ) -> tuple[int, list[str]]:
     """Reduce o limita la descripción para mantenerla fuera de la zona del precio."""
     font_size = max_font_size
-    while font_size > min_font_size:
+    while font_size >= min_font_size:
         lines = wrap_text_to_width(text, "Helvetica-Bold", font_size, max_width)
         if len(lines) <= max_lines and len(lines) * font_size * 1.15 <= available_height:
             return font_size, lines
         font_size -= 1
+    font_size = min_font_size
     lines = wrap_text_to_width(text, "Helvetica-Bold", font_size, max_width)
     height_lines = max(1, int(available_height // (font_size * 1.15)))
-    return font_size, lines[: min(max_lines, height_lines)]
+    limit = min(max_lines, height_lines)
+    visible = lines[:limit]
+    if len(lines) > limit and visible:
+        visible[-1] = _ellipsize(visible[-1], "Helvetica-Bold", font_size, max_width)
+    return font_size, visible
 
 
 def _footer_code(barcode: object, article_id: object = "") -> str:
@@ -440,3 +474,46 @@ def fetch_tracking_remote(url: str, get=requests.get) -> tuple[set[str], str]:
         return keys, ""
     except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
         return set(), f"No se pudo leer ETIQUETAS_SEGUIDAS: {exc}"
+
+
+def fetch_tracking_items_remote(url: str, get=requests.get) -> tuple[list[dict[str, str]], str]:
+    """Obtiene las filas completas sin convertirlas ni perder ceros o signos."""
+    if not url:
+        return [], "Falta APPS_SCRIPT_URL."
+    try:
+        response = get(url, params={"action": "get_tracking"}, timeout=(4, 8))
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            return [], str(payload.get("error", "Respuesta inválida de Apps Script"))
+        items = []
+        for raw in payload.get("items", []):
+            item = {field: str(raw.get(field, "")).strip() for field in ("Codigo_Barra", "IdArticulo", "Descripcion")}
+            if item["Codigo_Barra"] or item["IdArticulo"]:
+                items.append(item)
+        return items, ""
+    except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
+        return [], f"No se pudo leer ETIQUETAS_SEGUIDAS: {exc}"
+
+
+def mutate_tracking_remote(
+    url: str,
+    action: str,
+    items: list[dict],
+    post=requests.post,
+    timeout: tuple[int, int] = (2, 6),
+) -> tuple[bool, dict, str]:
+    """Ejecuta altas o bajas incrementales; nunca reemplaza la hoja completa."""
+    if not url:
+        return False, {}, "Falta APPS_SCRIPT_URL."
+    if action not in {"add_tracking", "upsert_tracking", "remove_tracking"}:
+        return False, {}, "Operación de seguimiento inválida."
+    try:
+        response = post(url, json={"action": action, "items": items}, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            return False, payload, str(payload.get("error", "Respuesta inválida de Apps Script"))
+        return True, payload, str(payload.get("message", "Seguimiento actualizado."))
+    except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
+        return False, {}, f"Apps Script no respondió; el producto queda pendiente. Detalle: {exc}"

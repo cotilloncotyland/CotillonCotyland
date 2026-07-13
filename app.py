@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
@@ -12,16 +11,18 @@ from uuid import uuid4
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 from cotyland_core import (
     apply_print_codes_from_catalog,
     compare_price_lists,
+    fetch_tracking_items_remote,
     fetch_tracking_remote,
     generar_pdf_por_tamanio,
     make_product_lookup,
+    mutate_tracking_remote,
     parse_product_csv_bytes,
     process_scan,
-    replace_tracking_remote,
 )
 
 ID_DRIVE = "1z1naxcQyryThMHj3H9K3xi27EDuugBPnFKrrwrJ8v1Y"
@@ -55,30 +56,32 @@ def load_tracking(url: str) -> tuple[set[str], str]:
     return fetch_tracking_remote(url)
 
 
-def save_tracking(url: str, selected: pd.DataFrame) -> tuple[bool, str]:
-    items = selected[["Codigo_Impresion", "IdArticulo"]].rename(columns={"Codigo_Impresion": "Codigo_Barra"}).to_dict("records")
-    ok, message = replace_tracking_remote(url, items)
-    if ok:
-        load_tracking.clear()
-    return ok, message
-
-
 def install_scanner_key_guard() -> None:
-    """Componente mínimo: bloquea F2/F11; no hace fetch ni inyecta el PDF."""
-    st.iframe(
+    """Recupera el guard AV2, limitado exclusivamente al campo del escáner."""
+    components.html(
         """
         <script>
         (() => {
           const doc = window.parent.document;
-          if (!window.parent.__cotylandKeyGuard) {
-            doc.addEventListener('keydown', (event) => {
-              if (event.key === 'F2' || event.key === 'F11') {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-              }
-            }, true);
-            window.parent.__cotylandKeyGuard = true;
+          const previous = window.parent.__cotylandKeyGuardHandler;
+          if (previous) {
+            doc.removeEventListener('keydown', previous, true);
           }
+          const handler = (event) => {
+            const scanner = [...doc.querySelectorAll('input')].find(
+              element => (element.getAttribute('aria-label') || '').includes('ESCANEÁ ACÁ')
+            );
+            const isScannerActive = scanner && (event.target === scanner || doc.activeElement === scanner);
+            const isReaderFunction = event.key === 'F2' || event.key === 'F11' ||
+              event.keyCode === 113 || event.keyCode === 122;
+            if (isScannerActive && isReaderFunction) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              setTimeout(() => scanner.focus({preventScroll: true}), 10);
+            }
+          };
+          window.parent.__cotylandKeyGuardHandler = handler;
+          doc.addEventListener('keydown', handler, true);
           setTimeout(() => {
             const input = [...doc.querySelectorAll('input')].find(
               element => (element.getAttribute('aria-label') || '').includes('ESCANEÁ ACÁ')
@@ -88,7 +91,7 @@ def install_scanner_key_guard() -> None:
         })();
         </script>
         """,
-        height=1,
+        height=0,
     )
 
 
@@ -130,48 +133,9 @@ def publish_generated_pdf(prefix: str, pdf_bytes: bytes) -> str:
 
 
 def direct_print_control(pdf_url: str, prefix: str) -> None:
-    """Botón aislado: abre el archivo publicado y llama print una sola vez."""
-    safe_url = json.dumps(pdf_url).replace("<", "\\u003c").replace(">", "\\u003e")
-    st.iframe(
-        f"""
-        <!doctype html>
-        <html lang="es"><head><meta charset="utf-8"><style>
-          body {{ margin: 0; font-family: sans-serif; }}
-          button {{ width: 100%; min-height: 46px; border: 0; border-radius: 8px;
-                    background: #ff9800; color: white; font-size: 16px; font-weight: 700; cursor: pointer; }}
-          #status {{ margin-top: 5px; color: #b42318; font-size: 13px; font-weight: 600; }}
-        </style></head><body>
-          <button id="print-{prefix}" type="button">Imprimir directamente</button>
-          <div id="status" role="alert" aria-live="polite"></div>
-          <script>
-          (() => {{
-            const button = document.getElementById('print-{prefix}');
-            const status = document.getElementById('status');
-            button.addEventListener('click', () => {{
-              status.textContent = '';
-              const pdfUrl = new URL({safe_url}, document.referrer || window.location.href).href;
-              const popup = window.open(pdfUrl, '_blank');
-              if (!popup) {{
-                status.textContent = 'El navegador bloqueó la ventana. Habilitá los pop-ups para imprimir.';
-                return;
-              }}
-              let printSent = false;
-              const printOnce = () => {{
-                if (printSent || popup.closed) return;
-                printSent = true;
-                try {{ popup.focus(); popup.print(); }}
-                catch (_) {{ status.textContent = 'El PDF se abrió. Usá Imprimir en la nueva pestaña.'; }}
-              }};
-              popup.addEventListener('load', () => window.setTimeout(printOnce, 500), {{once: true}});
-              window.setTimeout(printOnce, 1600);
-            }});
-          }})();
-          </script>
-        </body></html>
-        """,
-        height=76,
-        width="stretch",
-    )
+    """Abre el PDF ya generado con un control nativo y sin regenerarlo."""
+    st.link_button("Abrir PDF para imprimir", pdf_url, width="stretch", type="primary")
+    st.caption("El PDF se abre en otra pestaña. Presioná Ctrl+P para imprimir.")
 
 
 def pdf_controls(prefix: str, selected: pd.DataFrame) -> None:
@@ -254,6 +218,29 @@ with tab_scanner:
         placeholder="Hacé un clic y pasá los códigos de corrido...",
     )
     install_scanner_key_guard()
+    if st.session_state.scan_queue:
+        latest = st.session_state.scan_queue[-1]
+        if "_DriveStatus" not in latest:
+            tracking_item = {field: latest.get(field, "") for field in ("Codigo_Barra", "IdArticulo", "Descripcion")}
+            ok, payload, sync_message = mutate_tracking_remote(apps_script_url(), "upsert_tracking", [tracking_item])
+            if ok:
+                latest["_DriveStatus"] = "Guardado en Drive" if payload.get("added", 0) else "Ya estaba guardado"
+                load_tracking.clear()
+            else:
+                latest["_DriveStatus"] = "Pendiente de sincronización"
+                latest["_DriveError"] = sync_message
+        pending_items = [item for item in st.session_state.scan_queue if item.get("_DriveStatus") == "Pendiente de sincronización"]
+        if pending_items and st.button(f"Reintentar pendientes ({len(pending_items)})", key="retry_tracking"):
+            payload_items = [{field: item.get(field, "") for field in ("Codigo_Barra", "IdArticulo", "Descripcion")} for item in pending_items]
+            ok, _, message = mutate_tracking_remote(apps_script_url(), "upsert_tracking", payload_items)
+            if ok:
+                for item in pending_items:
+                    item["_DriveStatus"] = "Guardado en Drive"
+                    item.pop("_DriveError", None)
+                load_tracking.clear()
+                st.success("Pendientes sincronizados.")
+            else:
+                st.warning(message)
     if st.session_state.scan_message:
         if st.session_state.scan_message.startswith("Código no encontrado") or "No se pudo" in st.session_state.scan_message or "vacía" in st.session_state.scan_message:
             st.warning(st.session_state.scan_message)
@@ -282,12 +269,14 @@ with tab_scanner:
             st.session_state.scanner_pdf_url = ""
             st.rerun()
         queue_frame = pd.DataFrame(st.session_state.scan_queue)
+        queue_frame["Estado Drive"] = queue_frame.get("_DriveStatus", "")
+        queue_frame = queue_frame.drop(columns=["_DriveStatus", "_DriveError"], errors="ignore")
         queue_frame.insert(0, "_id", range(len(queue_frame)))
         visible = queue_frame[search_mask(queue_frame, query, ["Codigo_Barra", "Descripcion"])].copy()
         edited = st.data_editor(
             visible,
             column_config={"Imprimir": st.column_config.CheckboxColumn(default=True), "_id": None},
-            disabled=["Codigo_Barra", "IdArticulo", "Descripcion", "Precio", "Fecha"],
+            disabled=["Codigo_Barra", "IdArticulo", "Descripcion", "Precio", "Fecha", "Estado Drive"],
             hide_index=True,
             width="stretch",
             key="scanner_editor",
@@ -348,13 +337,22 @@ with tab_compare:
             changes, stats = compare_price_lists(io.BytesIO(file_a.getvalue()), io.BytesIO(file_b.getvalue()))
             catalog_products, catalog_error = download_products(URL_DRIVE)
             changes = apply_print_codes_from_catalog(changes, catalog_products)
-            followed, tracking_error = load_tracking(apps_script_url())
+            tracked_items, tracking_error = fetch_tracking_items_remote(apps_script_url())
+            followed = {
+                str(item.get(field, "")).strip().casefold()
+                for item in tracked_items for field in ("Codigo_Barra", "IdArticulo")
+                if str(item.get(field, "")).strip()
+            }
             changes.insert(0, "_id", range(len(changes)))
-            changes.insert(1, "Imprimir", [
+            followed_flags = [
                 str(row.Codigo_Impresion).casefold() in followed or str(row.IdArticulo).casefold() in followed
                 for row in changes.itertuples()
-            ])
+            ]
+            changes.insert(1, "Imprimir", followed_flags)
+            changes.insert(2, "En seguimiento", followed_flags)
             st.session_state.compare_frame = changes
+            st.session_state.compare_original_followed = set(changes.loc[changes["En seguimiento"], "_id"])
+            st.session_state.tracking_admin_items = tracked_items
             st.session_state.compare_stats = stats
             st.session_state.compare_tracking_error = " · ".join(message for message in (catalog_error, tracking_error) if message)
             st.session_state.compare_pdf = None
@@ -381,19 +379,77 @@ with tab_compare:
             st.session_state.compare_frame["Imprimir"] = False
             st.rerun()
         visible = frame[search_mask(frame, query, ["IdArticulo", "Codigo_Impresion", "Descripcion", "Movimiento"])].copy()
-        edited = st.data_editor(
-            visible,
-            column_config={"Imprimir": st.column_config.CheckboxColumn(default=False), "_id": None},
-            disabled=["IdArticulo", "Codigo_Impresion", "Descripcion", "Precio_num_Anterior", "Precio_num_Nuevo", "Movimiento"],
-            hide_index=True,
-            width="stretch",
-            key="compare_editor",
-        )
-        update_visible_selection("compare_frame", edited, "Imprimir")
+        with st.form("compare_selection_form"):
+            edited = st.data_editor(
+                visible,
+                column_config={
+                    "Imprimir": st.column_config.CheckboxColumn(default=False),
+                    "En seguimiento": st.column_config.CheckboxColumn(default=False),
+                    "_id": None,
+                },
+                disabled=["IdArticulo", "Codigo_Impresion", "Descripcion", "Precio_num_Anterior", "Precio_num_Nuevo", "Movimiento"],
+                hide_index=True,
+                width="stretch",
+                key="compare_editor",
+            )
+            apply_selection = st.form_submit_button("Aplicar selección", width="stretch")
+        if apply_selection:
+            update_visible_selection("compare_frame", edited, "Imprimir")
+            update_visible_selection("compare_frame", edited, "En seguimiento")
         selected = st.session_state.compare_frame[st.session_state.compare_frame["Imprimir"]].copy()
         selected_for_pdf = selected.rename(columns={"Codigo_Impresion": "Codigo_Barra", "Precio_num_Nuevo": "Precio"})
         selected_for_pdf["Fecha"] = date.today().strftime("%d/%m/%y")
         pdf_controls("compare", selected_for_pdf)
-        if st.button("Confirmar seguimiento en Drive", width="stretch", disabled=selected.empty):
-            ok, message = save_tracking(apps_script_url(), selected)
-            (st.success if ok else st.warning)(message)
+        current_followed = set(st.session_state.compare_frame.loc[st.session_state.compare_frame["En seguimiento"], "_id"])
+        original_followed = set(st.session_state.get("compare_original_followed", set()))
+        additions = st.session_state.compare_frame[st.session_state.compare_frame["_id"].isin(current_followed - original_followed)]
+        removals = st.session_state.compare_frame[st.session_state.compare_frame["_id"].isin(original_followed - current_followed)]
+        if st.button("Guardar altas y bajas del seguimiento", width="stretch", disabled=additions.empty and removals.empty):
+            add_items = additions.rename(columns={"Codigo_Impresion": "Codigo_Barra"})[["Codigo_Barra", "IdArticulo", "Descripcion"]].to_dict("records")
+            remove_items = removals.rename(columns={"Codigo_Impresion": "Codigo_Barra"})[["Codigo_Barra", "IdArticulo", "Descripcion"]].to_dict("records")
+            add_ok, add_payload, add_message = mutate_tracking_remote(apps_script_url(), "upsert_tracking", add_items) if add_items else (True, {"added": 0}, "")
+            remove_ok, remove_payload, remove_message = mutate_tracking_remote(apps_script_url(), "remove_tracking", remove_items) if remove_items else (True, {"removed": 0}, "")
+            if add_ok and remove_ok:
+                st.session_state.compare_original_followed = current_followed
+                load_tracking.clear()
+                total = remove_payload.get("total", add_payload.get("total", len(current_followed)))
+                st.success(f"Agregados: {add_payload.get('added', 0)} · Eliminados: {remove_payload.get('removed', 0)} · Total: {total}")
+            else:
+                st.warning(" · ".join(message for ok, message in ((add_ok, add_message), (remove_ok, remove_message)) if not ok))
+
+    with st.expander("Administrar productos seguidos"):
+        if st.button("Cargar o actualizar seguimiento", key="tracking_admin_load"):
+            admin_items, admin_error = fetch_tracking_items_remote(apps_script_url())
+            st.session_state.tracking_admin_items = admin_items
+            st.session_state.tracking_admin_error = admin_error
+        if st.session_state.get("tracking_admin_error"):
+            st.warning(st.session_state.tracking_admin_error)
+        admin_items = st.session_state.get("tracking_admin_items", [])
+        if admin_items:
+            admin_frame = pd.DataFrame(admin_items)
+            admin_frame.insert(0, "_id", range(len(admin_frame)))
+            admin_frame.insert(1, "Eliminar", False)
+            admin_query = st.text_input("Buscar productos seguidos", key="tracking_admin_search")
+            admin_visible = admin_frame[search_mask(admin_frame, admin_query, ["Codigo_Barra", "IdArticulo", "Descripcion"])]
+            admin_edited = st.data_editor(admin_visible, column_config={"Eliminar": st.column_config.CheckboxColumn(default=False), "_id": None}, disabled=["Codigo_Barra", "IdArticulo", "Descripcion"], hide_index=True, width="stretch", key="tracking_admin_editor")
+            to_remove = admin_edited[admin_edited["Eliminar"]][["Codigo_Barra", "IdArticulo", "Descripcion"]].to_dict("records")
+            if st.button("Eliminar seleccionados", disabled=not to_remove, key="tracking_admin_remove"):
+                ok, payload, message = mutate_tracking_remote(apps_script_url(), "remove_tracking", to_remove)
+                if ok:
+                    removed_keys = {(str(item["IdArticulo"]).casefold(), str(item["Codigo_Barra"]).casefold()) for item in to_remove}
+                    st.session_state.tracking_admin_items = [item for item in admin_items if (str(item.get("IdArticulo", "")).casefold(), str(item.get("Codigo_Barra", "")).casefold()) not in removed_keys]
+                    st.success(f"Eliminados: {payload.get('removed', 0)} · Total: {payload.get('total', 0)}")
+                    st.rerun()
+                else:
+                    st.warning(message)
+            confirm_empty = st.checkbox("Confirmo que deseo vaciar completamente el seguimiento", key="tracking_admin_confirm_empty")
+            if st.button("Vaciar seguimiento", disabled=not confirm_empty, key="tracking_admin_empty"):
+                ok, payload, message = mutate_tracking_remote(apps_script_url(), "remove_tracking", admin_items)
+                if ok:
+                    st.session_state.tracking_admin_items = []
+                    st.success(f"Seguimiento vacío. Eliminados: {payload.get('removed', 0)}")
+                    st.rerun()
+                else:
+                    st.warning(message)
+        elif "tracking_admin_items" in st.session_state and not st.session_state.get("tracking_admin_error"):
+            st.info("No hay productos en seguimiento.")

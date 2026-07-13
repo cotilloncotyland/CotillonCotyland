@@ -16,7 +16,7 @@ function trackingSheet_() {
   let sheet = book.getSheetByName(TRACKING_SHEET);
   if (!sheet) {
     sheet = book.insertSheet(TRACKING_SHEET);
-    sheet.getRange(1, 1, 1, 2).setValues([['Codigo_Barra', 'IdArticulo']]);
+    sheet.getRange(1, 1, 1, 3).setValues([['Codigo_Barra', 'IdArticulo', 'Descripcion']]);
   }
   return sheet;
 }
@@ -33,10 +33,10 @@ function doGet(event) {
     const sheet = trackingSheet_();
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) return jsonResponse_({ok: true, items: []});
-    const values = sheet.getRange(2, 1, lastRow - 1, 2).getDisplayValues();
+    const values = sheet.getRange(2, 1, lastRow - 1, 3).getDisplayValues();
     const items = values
       .filter(row => String(row[0]).trim() || String(row[1]).trim())
-      .map(row => ({Codigo_Barra: String(row[0]).trim(), IdArticulo: String(row[1]).trim()}));
+      .map(row => ({Codigo_Barra: String(row[0]).trim(), IdArticulo: String(row[1]).trim(), Descripcion: String(row[2]).trim()}));
     return jsonResponse_({ok: true, items: items});
   } catch (error) {
     return jsonResponse_({ok: false, error: String(error && error.message || error)});
@@ -48,25 +48,43 @@ function doPost(event) {
   try {
     lock.waitLock(20000);
     const body = JSON.parse((event && event.postData && event.postData.contents) || '{}');
-    if (body.action !== 'replace_tracking' || !Array.isArray(body.items)) {
+    if (!['add_tracking', 'upsert_tracking', 'remove_tracking'].includes(body.action) || !Array.isArray(body.items)) {
       return jsonResponse_({ok: false, error: 'Solicitud inválida.'});
     }
-    const seen = new Set();
-    const rows = body.items
-      .map(item => [String(item.Codigo_Barra || '').trim(), String(item.IdArticulo || '').trim()])
-      .filter(row => {
-        if (!row[0] && !row[1]) return false;
-        const key = (row[1] || row[0]).toLocaleLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
     const sheet = trackingSheet_();
-    sheet.clearContents();
-    sheet.getRange(1, 1, 1, 2).setValues([['Codigo_Barra', 'IdArticulo']]);
-    if (rows.length) sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+    const lastRow = sheet.getLastRow();
+    const existing = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 3).getDisplayValues();
+    const norm = value => String(value || '').trim().toLocaleLowerCase();
+    const incoming = body.items.map(item => [
+      String(item.Codigo_Barra || '').trim(),
+      String(item.IdArticulo || '').trim(),
+      String(item.Descripcion || '').trim()
+    ]).filter(row => row[0] || row[1]);
+    if (body.action === 'remove_tracking') {
+      const ids = new Set(incoming.map(row => norm(row[1])).filter(Boolean));
+      const barcodes = new Set(incoming.map(row => norm(row[0])).filter(Boolean));
+      const rowsToDelete = [];
+      existing.forEach((row, index) => {
+        if ((norm(row[1]) && ids.has(norm(row[1]))) || (!norm(row[1]) && norm(row[0]) && barcodes.has(norm(row[0])))) rowsToDelete.push(index + 2);
+      });
+      rowsToDelete.sort((a, b) => b - a).forEach(rowNumber => sheet.deleteRow(rowNumber));
+      SpreadsheetApp.flush();
+      return jsonResponse_({ok: true, removed: rowsToDelete.length, total: existing.length - rowsToDelete.length});
+    }
+    const existingIds = new Set(existing.map(row => norm(row[1])).filter(Boolean));
+    const existingBarcodes = new Set(existing.map(row => norm(row[0])).filter(Boolean));
+    const batchKeys = new Set();
+    const additions = incoming.filter(row => {
+      const id = norm(row[1]);
+      const barcode = norm(row[0]);
+      const key = id ? 'id:' + id : 'barcode:' + barcode;
+      if (batchKeys.has(key) || (id && existingIds.has(id)) || (!id && barcode && existingBarcodes.has(barcode))) return false;
+      batchKeys.add(key);
+      return true;
+    });
+    if (additions.length) sheet.getRange(sheet.getLastRow() + 1, 1, additions.length, 3).setValues(additions);
     SpreadsheetApp.flush();
-    return jsonResponse_({ok: true, count: rows.length});
+    return jsonResponse_({ok: true, added: additions.length, existing: incoming.length - additions.length, total: existing.length + additions.length});
   } catch (error) {
     return jsonResponse_({ok: false, error: String(error && error.message || error)});
   } finally {

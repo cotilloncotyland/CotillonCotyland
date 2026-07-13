@@ -3,7 +3,13 @@ import pytest
 import io
 from pypdf import PdfReader
 
-from cotyland_core import fetch_tracking_remote, generar_pdf_por_tamanio, replace_tracking_remote
+from cotyland_core import (
+    fetch_tracking_items_remote,
+    fetch_tracking_remote,
+    generar_pdf_por_tamanio,
+    mutate_tracking_remote,
+    replace_tracking_remote,
+)
 
 
 PRODUCTS = [
@@ -81,6 +87,48 @@ def test_apps_script_tracking_valid_response():
     followed, warning = fetch_tracking_remote("https://valid.example", get=fake_get)
     assert followed == {"00123", "art-1"}
     assert warning == ""
+
+
+def test_incremental_tracking_preserves_literal_codes_and_description():
+    def fake_get(*args, **kwargs):
+        return FakeResponse({"ok": True, "items": [{
+            "Codigo_Barra": ".001-AB", "IdArticulo": "DL0026", "Descripcion": "Producto (prueba), especial"
+        }]})
+
+    items, warning = fetch_tracking_items_remote("https://valid.example", get=fake_get)
+    assert warning == ""
+    assert items == [{"Codigo_Barra": ".001-AB", "IdArticulo": "DL0026", "Descripcion": "Producto (prueba), especial"}]
+
+
+@pytest.mark.parametrize("action", ["add_tracking", "upsert_tracking", "remove_tracking"])
+def test_incremental_tracking_sends_only_requested_operation(action):
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append(kwargs)
+        return FakeResponse({"ok": True, "added": 0, "existing": 1, "removed": 0, "total": 3})
+
+    ok, payload, _ = mutate_tracking_remote(
+        "https://valid.example", action,
+        [{"Codigo_Barra": "00123", "IdArticulo": "ART-1", "Descripcion": "Producto"}],
+        post=fake_post,
+    )
+    assert ok
+    assert calls[0]["json"]["action"] == action
+    assert "replace_tracking" not in str(calls[0]["json"])
+    assert payload["total"] == 3
+
+
+def test_incremental_tracking_network_failure_leaves_pending():
+    def failing_post(*args, **kwargs):
+        raise requests.Timeout("timeout controlado")
+
+    ok, payload, message = mutate_tracking_remote(
+        "https://invalid.example", "upsert_tracking", [{"Codigo_Barra": "AB-123", "IdArticulo": "1"}], post=failing_post
+    )
+    assert not ok
+    assert payload == {}
+    assert "pendiente" in message
 
 
 @pytest.mark.parametrize("error", [requests.ConnectionError("inválida"), requests.Timeout("timeout")])
