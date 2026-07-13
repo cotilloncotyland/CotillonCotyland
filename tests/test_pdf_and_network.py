@@ -1,7 +1,9 @@
 import requests
+import pytest
+import io
 from pypdf import PdfReader
 
-from cotyland_core import generar_pdf_por_tamanio, replace_tracking_remote
+from cotyland_core import fetch_tracking_remote, generar_pdf_por_tamanio, replace_tracking_remote
 
 
 PRODUCTS = [
@@ -23,6 +25,34 @@ def test_generate_all_three_pdf_sizes(tmp_path):
         assert "00123" in text
 
 
+def pdf_text_positions(size, description):
+    data, _ = generar_pdf_por_tamanio(size, [("AB-001", description, "12345,67", "12/07/26", "SKU")])
+    fragments = []
+
+    def visit(text, current_matrix, text_matrix, font_dictionary, font_size):
+        if text.strip():
+            fragments.append((text.strip(), float(text_matrix[5]), float(font_size)))
+
+    PdfReader(io.BytesIO(data)).pages[0].extract_text(visitor_text=visit)
+    return fragments
+
+
+@pytest.mark.parametrize("size", ["Chica", "Mediana", "Gigante"])
+def test_long_description_never_overlaps_or_moves_price(size):
+    short = pdf_text_positions(size, "DESCRIPCION CORTA")
+    long = pdf_text_positions(
+        size,
+        "DESCRIPCION EXTREMADAMENTE LARGA CON MUCHAS PALABRAS PARA VERIFICAR QUE NUNCA PISE EL PRECIO CENTRAL FIJO DE LA ETIQUETA",
+    )
+    short_price = next(item for item in short if item[0].startswith("$"))
+    long_price = next(item for item in long if item[0].startswith("$"))
+    description_fragments = [item for item in long if item[0].startswith(("DESCRIPCION", "MUCHAS", "PISE", "LARGA", "VERIFICAR", "CENTRAL"))]
+
+    assert long_price[1:] == short_price[1:]
+    assert description_fragments
+    assert min(item[1] for item in description_fragments) > long_price[1] + long_price[2] * 0.75
+
+
 def test_apps_script_network_error_does_not_raise():
     def failing_post(*args, **kwargs):
         raise requests.ConnectionError("red simulada fuera de servicio")
@@ -31,3 +61,33 @@ def test_apps_script_network_error_does_not_raise():
     assert ok is False
     assert "PDF sigue disponible" in message
 
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.payload
+
+
+def test_apps_script_tracking_valid_response():
+    def fake_get(*args, **kwargs):
+        assert kwargs["timeout"] == (4, 8)
+        return FakeResponse({"ok": True, "items": [{"Codigo_Barra": "00123", "IdArticulo": "ART-1"}]})
+
+    followed, warning = fetch_tracking_remote("https://valid.example", get=fake_get)
+    assert followed == {"00123", "art-1"}
+    assert warning == ""
+
+
+@pytest.mark.parametrize("error", [requests.ConnectionError("inválida"), requests.Timeout("timeout")])
+def test_apps_script_tracking_failure_is_warning(error):
+    def failing_get(*args, **kwargs):
+        raise error
+
+    followed, warning = fetch_tracking_remote("https://bad.example", get=failing_get)
+    assert followed == set()
+    assert "No se pudo leer ETIQUETAS_SEGUIDAS" in warning

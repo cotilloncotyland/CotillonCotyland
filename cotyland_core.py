@@ -99,6 +99,26 @@ def wrap_text_to_width(text: str, font_name: str, font_size: int, max_width: flo
     return lines
 
 
+def fit_description(
+    text: str,
+    max_width: float,
+    available_height: float,
+    max_lines: int,
+    max_font_size: int,
+    min_font_size: int,
+) -> tuple[int, list[str]]:
+    """Reduce o limita la descripción para mantenerla fuera de la zona del precio."""
+    font_size = max_font_size
+    while font_size > min_font_size:
+        lines = wrap_text_to_width(text, "Helvetica-Bold", font_size, max_width)
+        if len(lines) <= max_lines and len(lines) * font_size * 1.15 <= available_height:
+            return font_size, lines
+        font_size -= 1
+    lines = wrap_text_to_width(text, "Helvetica-Bold", font_size, max_width)
+    height_lines = max(1, int(available_height // (font_size * 1.15)))
+    return font_size, lines[: min(max_lines, height_lines)]
+
+
 def _footer_code(barcode: object, article_id: object = "") -> str:
     return clean_code(barcode) or clean_code(article_id)
 
@@ -122,14 +142,17 @@ def generar_carteles_gigantes(products: Iterable[tuple]) -> bytes:
         while size > 20 and pdfmetrics.stringWidth(price_text, "Helvetica-Bold", size) > label_w - 20:
             size -= 2
         pdf.setFont("Helvetica-Bold", size)
-        pdf.drawCentredString(x + label_w / 2, y + label_h / 2 - size / 3, price_text)
+        price_y = y + label_h / 2 - size / 3
+        pdf.drawCentredString(x + label_w / 2, price_y, price_text)
         description = fix_encoding(name).strip().upper()
-        lines = wrap_text_to_width(description, "Helvetica-Bold", 26, label_w - 40)[:2]
-        pdf.setFont("Helvetica-Bold", 26)
-        cursor_y = y + label_h - 45
+        description_top = y + label_h - 45
+        description_bottom = price_y + size * 0.75 + 6
+        desc_size, lines = fit_description(description, label_w - 40, max(8, description_top - description_bottom), 2, 26, 10)
+        pdf.setFont("Helvetica-Bold", desc_size)
+        cursor_y = description_top
         for line in lines:
             pdf.drawCentredString(x + label_w / 2, cursor_y, line)
-            cursor_y -= 31
+            cursor_y -= desc_size * 1.15
         footer_date = str(date_text).strip() or today
         pdf.setFont("Helvetica-Bold", 12)
         pdf.drawCentredString(x + label_w / 2, y + 16, f"{_footer_code(barcode, article_id)}  {footer_date}")
@@ -151,23 +174,22 @@ def generar_precios_medianos(products: Iterable[tuple]) -> bytes:
         x, y = margin_x + column * label_w, page_h - margin_y - (row_number + 1) * label_h
         pdf.rect(x, y, label_w, label_h)
         inner_w = label_w - 6 * mm
-        description = fix_encoding(name).strip().upper()
-        size = 20
-        lines = wrap_text_to_width(description, "Helvetica-Bold", size, inner_w)
-        while size >= 8 and len(lines) * size * 1.15 > label_h * 0.38:
-            size -= 1
-            lines = wrap_text_to_width(description, "Helvetica-Bold", size, inner_w)
-        pdf.setFont("Helvetica-Bold", size)
-        cursor_y = y + label_h - 4 * mm - size
-        for line in lines:
-            pdf.drawCentredString(x + label_w / 2, cursor_y, line)
-            cursor_y -= size * 1.15
         price_text = format_price_arg(price)
         size = 105
         while size > 14 and pdfmetrics.stringWidth(price_text, "Helvetica-Bold", size) > inner_w:
             size -= 1
         pdf.setFont("Helvetica-Bold", size)
-        pdf.drawCentredString(x + label_w / 2, y + 16.5 * mm, price_text)
+        price_y = y + 16.5 * mm
+        pdf.drawCentredString(x + label_w / 2, price_y, price_text)
+        description = fix_encoding(name).strip().upper()
+        description_top = y + label_h - 4 * mm
+        description_bottom = price_y + size * 0.75 + 2 * mm
+        desc_size, lines = fit_description(description, inner_w, max(8, description_top - description_bottom), 4, 20, 7)
+        pdf.setFont("Helvetica-Bold", desc_size)
+        cursor_y = description_top - desc_size
+        for line in lines:
+            pdf.drawCentredString(x + label_w / 2, cursor_y, line)
+            cursor_y -= desc_size * 1.15
         footer = f"{_footer_code(barcode, article_id)}   {str(date_text).strip() or today}"
         pdf.setFont("Helvetica", 10)
         pdf.drawCentredString(x + label_w / 2, y + 4 * mm, footer)
@@ -205,15 +227,16 @@ def generar_etiquetas_chicas(products: Iterable[tuple]) -> bytes:
         while size > 12 and pdfmetrics.stringWidth(price_text, "Helvetica-Bold", size) > label_w - 4 * mm:
             size -= 1
         pdf.setFont("Helvetica-Bold", size)
-        pdf.drawCentredString(x + label_w / 2, y + label_h * 0.25, price_text)
-        pdf.setFont("Helvetica-Bold", 10)
-        lines = wrap_text_to_width(fix_encoding(name).strip().upper(), "Helvetica-Bold", 10, label_w - 4 * mm)[:4]
-        cursor_y = y + label_h - 5 * mm
+        price_y = y + label_h * 0.25
+        pdf.drawCentredString(x + label_w / 2, price_y, price_text)
+        description_top = y + label_h - 5 * mm
+        description_bottom = price_y + size * 0.75 + 1 * mm
+        desc_size, lines = fit_description(fix_encoding(name).strip().upper(), label_w - 4 * mm, max(6, description_top - description_bottom), 4, 10, 7)
+        pdf.setFont("Helvetica-Bold", desc_size)
+        cursor_y = description_top
         for line in lines:
-            if cursor_y < y + label_h * 0.25 + 14:
-                break
             pdf.drawCentredString(x + label_w / 2, cursor_y, line)
-            cursor_y -= 11.5
+            cursor_y -= desc_size * 1.15
         pdf.setFont("Helvetica", 8)
         footer = f"{_footer_code(barcode, article_id)} - {str(date_text).strip() or today}"
         pdf.drawCentredString(x + label_w / 2, y + 2 * mm, footer)
@@ -396,3 +419,24 @@ def replace_tracking_remote(url: str, items: list[dict], post=requests.post) -> 
         return True, f"Seguimiento actualizado: {payload.get('count', len(items))} productos."
     except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
         return False, f"Apps Script no respondió. El PDF sigue disponible. Detalle: {exc}"
+
+
+def fetch_tracking_remote(url: str, get=requests.get) -> tuple[set[str], str]:
+    """Lee seguimiento de forma acotada; cualquier fallo se convierte en aviso."""
+    if not url:
+        return set(), ""
+    try:
+        response = get(url, params={"action": "get_tracking"}, timeout=(4, 8))
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            return set(), str(payload.get("error", "Respuesta inválida de Apps Script"))
+        keys: set[str] = set()
+        for item in payload.get("items", []):
+            for field in ("Codigo_Barra", "IdArticulo"):
+                value = str(item.get(field, "")).strip().casefold()
+                if value:
+                    keys.add(value)
+        return keys, ""
+    except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
+        return set(), f"No se pudo leer ETIQUETAS_SEGUIDAS: {exc}"
