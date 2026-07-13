@@ -1,5 +1,7 @@
 streamlit==1.56.0
 pandas==2.2.3
+numpy==1.26.4
+pyarrow==16.1.0
 requests==2.32.3
 urllib3==2.2.3
 charset-normalizer==3.4.0
