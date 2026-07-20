@@ -38,10 +38,14 @@ def apps_script_url() -> str:
         return ""
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_data(ttl=15, show_spinner=False)
 def download_products(url: str) -> tuple[pd.DataFrame, str]:
     try:
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        response = requests.get(
+            url,
+            timeout=REQUEST_TIMEOUT,
+            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
+        )
         response.raise_for_status()
         frame = parse_product_csv_bytes(response.content)
         if frame.empty:
