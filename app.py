@@ -198,6 +198,15 @@ with tab_scanner:
         st.caption(f"🟢 Motor activo: {len(products)} artículos en caché.")
     lookup = make_product_lookup(products) if not products.empty else {}
 
+    # Carga una sola vez la lista existente de ETIQUETAS_SEGUIDAS.
+    # Como está cacheada, no se consulta Google en cada escaneo.
+    tracked_keys, tracking_load_error = load_tracking(apps_script_url())
+    if tracking_load_error:
+        st.warning(
+            "No se pudo comprobar qué productos ya estaban guardados en Drive. "
+            f"Los escaneos nuevos quedarán pendientes hasta guardar el lote. Detalle: {tracking_load_error}"
+        )
+
     def handle_scan() -> None:
         raw = st.session_state.get("scanner_input", "")
         st.session_state.scanner_input = ""
@@ -211,12 +220,24 @@ with tab_scanner:
         callback_lookup = make_product_lookup(callback_products)
         found = process_scan(raw, callback_lookup, st.session_state.scan_queue, st.session_state.scan_not_found)
         if found and st.session_state.scan_queue:
-            # El escaneo nunca espera a Google Drive.
-            # El producto queda en memoria y se envía después, junto con los demás.
+            # El escaneo nunca espera una escritura en Google Drive.
+            # Solo compara contra la lista de seguimiento que ya está en memoria.
             latest = st.session_state.scan_queue[-1]
-            if "_DriveStatus" not in latest:
+
+            barcode_key = str(latest.get("Codigo_Barra", "")).strip().casefold()
+            article_key = str(latest.get("IdArticulo", "")).strip().casefold()
+
+            already_saved = (
+                (barcode_key and barcode_key in tracked_keys)
+                or (article_key and article_key in tracked_keys)
+            )
+
+            if already_saved:
+                latest["_DriveStatus"] = "Ya estaba guardado"
+            else:
                 latest["_DriveStatus"] = "Pendiente de guardar"
-                latest.pop("_DriveError", None)
+
+            latest.pop("_DriveError", None)
         st.session_state.scan_message = "Producto agregado." if found else f"Código no encontrado: {raw}"
         st.session_state.scanner_pdf = None
         st.session_state.scanner_pdf_name = ""
@@ -231,19 +252,27 @@ with tab_scanner:
     install_scanner_key_guard()
     if st.session_state.scan_queue:
         # IMPORTANTE:
-        # No se llama a Apps Script durante cada escaneo.
-        # Todos los productos pendientes se envían juntos en una sola operación.
+        # No se llama a Apps Script para escribir durante cada escaneo.
+        # Los ya existentes se identifican con la lista cacheada y solamente
+        # los nuevos se envían juntos al finalizar.
+        already_saved_count = sum(
+            1
+            for item in st.session_state.scan_queue
+            if item.get("_DriveStatus") in {"Guardado en Drive", "Ya estaba guardado"}
+        )
+
         pending_items = [
             item
             for item in st.session_state.scan_queue
             if item.get("_DriveStatus") not in {"Guardado en Drive", "Ya estaba guardado"}
         ]
 
+        st.caption(
+            f"⚡ Escaneo rápido activo: {already_saved_count} ya estaba(n) en Drive · "
+            f"{len(pending_items)} pendiente(s) nuevo(s)."
+        )
+
         if pending_items:
-            st.caption(
-                f"⚡ Escaneo rápido activo: {len(pending_items)} producto(s) "
-                "quedaron listos para guardar juntos."
-            )
 
             if st.button(
                 f"💾 Guardar pendientes en Drive ({len(pending_items)})",
