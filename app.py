@@ -210,6 +210,13 @@ with tab_scanner:
             return
         callback_lookup = make_product_lookup(callback_products)
         found = process_scan(raw, callback_lookup, st.session_state.scan_queue, st.session_state.scan_not_found)
+        if found and st.session_state.scan_queue:
+            # El escaneo nunca espera a Google Drive.
+            # El producto queda en memoria y se envía después, junto con los demás.
+            latest = st.session_state.scan_queue[-1]
+            if "_DriveStatus" not in latest:
+                latest["_DriveStatus"] = "Pendiente de guardar"
+                latest.pop("_DriveError", None)
         st.session_state.scan_message = "Producto agregado." if found else f"Código no encontrado: {raw}"
         st.session_state.scanner_pdf = None
         st.session_state.scanner_pdf_name = ""
@@ -223,28 +230,63 @@ with tab_scanner:
     )
     install_scanner_key_guard()
     if st.session_state.scan_queue:
-        latest = st.session_state.scan_queue[-1]
-        if "_DriveStatus" not in latest:
-            tracking_item = {field: latest.get(field, "") for field in ("Codigo_Barra", "IdArticulo", "Descripcion")}
-            ok, payload, sync_message = mutate_tracking_remote(apps_script_url(), "upsert_tracking", [tracking_item])
-            if ok:
-                latest["_DriveStatus"] = "Guardado en Drive" if payload.get("added", 0) else "Ya estaba guardado"
-                load_tracking.clear()
-            else:
-                latest["_DriveStatus"] = "Pendiente de sincronización"
-                latest["_DriveError"] = sync_message
-        pending_items = [item for item in st.session_state.scan_queue if item.get("_DriveStatus") == "Pendiente de sincronización"]
-        if pending_items and st.button(f"Reintentar pendientes ({len(pending_items)})", key="retry_tracking"):
-            payload_items = [{field: item.get(field, "") for field in ("Codigo_Barra", "IdArticulo", "Descripcion")} for item in pending_items]
-            ok, _, message = mutate_tracking_remote(apps_script_url(), "upsert_tracking", payload_items)
-            if ok:
-                for item in pending_items:
-                    item["_DriveStatus"] = "Guardado en Drive"
-                    item.pop("_DriveError", None)
-                load_tracking.clear()
-                st.success("Pendientes sincronizados.")
-            else:
-                st.warning(message)
+        # IMPORTANTE:
+        # No se llama a Apps Script durante cada escaneo.
+        # Todos los productos pendientes se envían juntos en una sola operación.
+        pending_items = [
+            item
+            for item in st.session_state.scan_queue
+            if item.get("_DriveStatus") not in {"Guardado en Drive", "Ya estaba guardado"}
+        ]
+
+        if pending_items:
+            st.caption(
+                f"⚡ Escaneo rápido activo: {len(pending_items)} producto(s) "
+                "quedaron listos para guardar juntos."
+            )
+
+            if st.button(
+                f"💾 Guardar pendientes en Drive ({len(pending_items)})",
+                key="save_tracking_batch",
+                type="primary",
+            ):
+                payload_items = [
+                    {
+                        field: item.get(field, "")
+                        for field in ("Codigo_Barra", "IdArticulo", "Descripcion")
+                    }
+                    for item in pending_items
+                ]
+
+                ok, payload, message = mutate_tracking_remote(
+                    apps_script_url(),
+                    "upsert_tracking",
+                    payload_items,
+                )
+
+                if ok:
+                    for item in pending_items:
+                        item["_DriveStatus"] = "Guardado en Drive"
+                        item.pop("_DriveError", None)
+
+                    load_tracking.clear()
+                    added = int(payload.get("added", 0) or 0)
+                    existing = int(payload.get("existing", 0) or 0)
+                    st.success(
+                        f"Guardado en una sola operación: "
+                        f"{added} nuevo(s), {existing} ya existente(s)."
+                    )
+                    st.rerun()
+                else:
+                    for item in pending_items:
+                        item["_DriveStatus"] = "Pendiente de guardar"
+                        item["_DriveError"] = message
+                    st.warning(
+                        "No se pudo guardar el lote todavía. "
+                        "Los productos siguen en la lista y no se perdieron. "
+                        f"Detalle: {message}"
+                    )
+
     if st.session_state.scan_message:
         if st.session_state.scan_message.startswith("Código no encontrado") or "No se pudo" in st.session_state.scan_message or "vacía" in st.session_state.scan_message:
             st.warning(st.session_state.scan_message)
