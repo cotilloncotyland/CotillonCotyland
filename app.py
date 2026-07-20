@@ -183,42 +183,91 @@ tab_scanner, tab_csv, tab_compare = st.tabs([
 
 with tab_scanner:
     for key, default in {
-        "scan_queue": [], "scan_not_found": [], "scan_message": "", "scanner_pdf": None, "scanner_pdf_name": "", "scanner_pdf_url": "", "product_base_ready": False
+        "scan_queue": [],
+        "scan_not_found": [],
+        "scan_message": "",
+        "scanner_pdf": None,
+        "scanner_pdf_name": "",
+        "scanner_pdf_url": "",
+        "product_lookup": {},
+        "product_count": 0,
+        "product_load_error": "",
+        "tracking_keys_session": set(),
+        "tracking_checked_session": False,
+        "tracking_load_error_session": "",
     }.items():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    products = pd.DataFrame()
-    product_error = ""
-    if st.session_state.product_base_ready:
+    # La base se descarga y se indexa una sola vez por sesión.
+    # Durante una ráfaga, cada código se busca enteramente en memoria.
+    if not st.session_state.product_lookup:
         products, product_error = download_products(URL_DRIVE)
-    if product_error:
-        st.warning(product_error)
-    elif not products.empty:
-        st.caption(f"🟢 Motor activo: {len(products)} artículos en caché.")
-    lookup = make_product_lookup(products) if not products.empty else {}
 
-    # Carga una sola vez la lista existente de ETIQUETAS_SEGUIDAS.
-    # Como está cacheada, no se consulta Google en cada escaneo.
-    tracked_keys, tracking_load_error = load_tracking(apps_script_url())
+        if product_error or products.empty:
+            st.session_state.product_load_error = (
+                product_error or "La base de productos está vacía."
+            )
+        else:
+            st.session_state.product_lookup = make_product_lookup(products)
+            st.session_state.product_count = len(products)
+            st.session_state.product_load_error = ""
+
+    if st.session_state.product_load_error:
+        st.warning(st.session_state.product_load_error)
+    elif st.session_state.product_count:
+        st.caption(
+            f"🟢 Motor activo: {st.session_state.product_count} artículos en memoria rápida."
+        )
+
+    # ETIQUETAS_SEGUIDAS también se consulta una sola vez por sesión.
+    # Si Google tarda, el escáner sigue funcionando y se puede reintentar aparte.
+    if not st.session_state.tracking_checked_session:
+        tracked_keys, tracking_load_error = load_tracking(apps_script_url())
+        st.session_state.tracking_keys_session = tracked_keys
+        st.session_state.tracking_load_error_session = tracking_load_error
+        st.session_state.tracking_checked_session = True
+
+    tracked_keys = st.session_state.tracking_keys_session
+    tracking_load_error = st.session_state.tracking_load_error_session
+
     if tracking_load_error:
         st.warning(
             "No se pudo comprobar qué productos ya estaban guardados en Drive. "
-            f"Los escaneos nuevos quedarán pendientes hasta guardar el lote. Detalle: {tracking_load_error}"
+            "Esto no frena el escaneo: los productos quedarán pendientes hasta guardar el lote. "
+            f"Detalle: {tracking_load_error}"
         )
+
+        if st.button(
+            "🔄 Reintentar lectura de ETIQUETAS_SEGUIDAS",
+            key="retry_tracking_read",
+        ):
+            load_tracking.clear()
+            st.session_state.tracking_checked_session = False
+            st.session_state.tracking_load_error_session = ""
+            st.rerun()
 
     def handle_scan() -> None:
         raw = st.session_state.get("scanner_input", "")
         st.session_state.scanner_input = ""
         if not str(raw).strip():
             return
-        callback_products, callback_error = download_products(URL_DRIVE)
-        st.session_state.product_base_ready = True
-        if callback_error or callback_products.empty:
-            st.session_state.scan_message = callback_error or "La base de productos está vacía."
+        callback_lookup = st.session_state.product_lookup
+
+        if not callback_lookup:
+            st.session_state.scan_message = (
+                st.session_state.product_load_error
+                or "La base de productos todavía no está disponible."
+            )
             return
-        callback_lookup = make_product_lookup(callback_products)
-        found = process_scan(raw, callback_lookup, st.session_state.scan_queue, st.session_state.scan_not_found)
+
+        # Búsqueda 100 % local: no descarga, no espera a Drive y no reconstruye el índice.
+        found = process_scan(
+            raw,
+            callback_lookup,
+            st.session_state.scan_queue,
+            st.session_state.scan_not_found,
+        )
         if found and st.session_state.scan_queue:
             # El escaneo nunca espera una escritura en Google Drive.
             # Solo compara contra la lista de seguimiento que ya está en memoria.
@@ -298,6 +347,20 @@ with tab_scanner:
                         item["_DriveStatus"] = "Guardado en Drive"
                         item.pop("_DriveError", None)
 
+                        barcode_key = str(
+                            item.get("Codigo_Barra", "")
+                        ).strip().casefold()
+                        article_key = str(
+                            item.get("IdArticulo", "")
+                        ).strip().casefold()
+
+                        if barcode_key:
+                            st.session_state.tracking_keys_session.add(barcode_key)
+                        if article_key:
+                            st.session_state.tracking_keys_session.add(article_key)
+
+                    # No volvemos a consultar Google después del lote.
+                    # Actualizamos el estado local inmediatamente.
                     load_tracking.clear()
                     added = int(payload.get("added", 0) or 0)
                     existing = int(payload.get("existing", 0) or 0)
