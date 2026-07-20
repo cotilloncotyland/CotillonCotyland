@@ -371,12 +371,38 @@ def apply_print_codes_from_catalog(changes: pd.DataFrame, product_base: pd.DataF
 
 
 def make_product_lookup(products: pd.DataFrame) -> dict[str, dict]:
+    """
+    Crea el índice del buscador conservando los códigos originales.
+
+    Algunos lectores entregan los IdArticulo internos con un punto inicial
+    (por ejemplo, ".10303475"), mientras que la base los guarda sin ese
+    punto ("10303475"). Para esos identificadores se registran ambas formas.
+
+    Esto no altera Codigo_Barra, IdArticulo ni lo que se imprime. Solo agrega
+    alias de búsqueda para que el escáner encuentre el mismo producto con o
+    sin el punto inicial.
+    """
     lookup: dict[str, dict] = {}
+
     for record in products.to_dict("records"):
         for field in ("Codigo_Barra", "IdArticulo"):
             key = normalize_code(record.get(field, ""))
-            if key and key not in lookup:
-                lookup[key] = record
+
+            if not key:
+                continue
+
+            variants = {key}
+
+            # Permite buscar códigos internos con o sin el punto inicial.
+            without_leading_dot = key.lstrip(".")
+            if without_leading_dot:
+                variants.add(without_leading_dot)
+                variants.add("." + without_leading_dot)
+
+            for variant in variants:
+                if variant and variant not in lookup:
+                    lookup[variant] = record
+
     return lookup
 
 
