@@ -486,7 +486,7 @@ def fetch_tracking_remote(url: str, get=requests.get) -> tuple[set[str], str]:
     if not url:
         return set(), ""
     try:
-        response = get(url, params={"action": "get_tracking"}, timeout=(4, 8))
+        response = get(url, params={"action": "get_tracking"}, timeout=(4, 30))
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
@@ -507,7 +507,7 @@ def fetch_tracking_items_remote(url: str, get=requests.get) -> tuple[list[dict[s
     if not url:
         return [], "Falta APPS_SCRIPT_URL."
     try:
-        response = get(url, params={"action": "get_tracking"}, timeout=(4, 8))
+        response = get(url, params={"action": "get_tracking"}, timeout=(4, 30))
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
