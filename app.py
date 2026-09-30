@@ -55,23 +55,16 @@ def download_products(url: str) -> tuple[pd.DataFrame, str]:
         return pd.DataFrame(), f"No se pudo cargar la base: {exc}"
 
 
-def sync_tracking_session() -> tuple[list[dict[str, str]], set[str], str]:
-    """Sincroniza ETIQUETAS_SEGUIDAS solo cuando el usuario lo pide."""
-    items, error = fetch_tracking_items_remote(apps_script_url())
+def sync_tracking_session() -> tuple[set[str], str]:
+    """Sincroniza solo las claves de ETIQUETAS_SEGUIDAS, sin leer filas completas."""
+    keys, error = fetch_tracking_remote(apps_script_url())
     if error:
-        return [], set(), error
+        return set(), error
 
-    keys = {
-        str(item.get(field, "")).strip().casefold()
-        for item in items
-        for field in ("Codigo_Barra", "IdArticulo")
-        if str(item.get(field, "")).strip()
-    }
-    st.session_state.tracking_keys_session = keys
-    st.session_state.tracking_admin_items = items
+    st.session_state.tracking_keys_session = set(keys)
     st.session_state.tracking_load_error_session = ""
     st.session_state.tracking_checked_session = True
-    return items, keys, ""
+    return set(keys), ""
 
 
 def install_scanner_key_guard() -> None:
@@ -250,7 +243,7 @@ with tab_scanner:
         "🔄 Sincronizar guardados con Drive",
         key="sync_tracking_scanner",
     ):
-        _, keys, error = sync_tracking_session()
+        keys, error = sync_tracking_session()
         if error:
             st.session_state.tracking_load_error_session = error
             st.warning(f"Drive no respondió: {error}")
@@ -482,7 +475,7 @@ with tab_compare:
 
     sync_col, status_col = st.columns([1, 2])
     if sync_col.button("🔄 Sincronizar seguimiento", key="sync_tracking_compare"):
-        items, keys, error = sync_tracking_session()
+        keys, error = sync_tracking_session()
         if error:
             st.session_state.tracking_load_error_session = error
             st.warning(f"No se pudo sincronizar Drive: {error}")
@@ -501,7 +494,7 @@ with tab_compare:
                     frame.loc[frame["En seguimiento"], "_id"]
                 )
             st.success(
-                f"Seguimiento sincronizado: {len(items)} productos · {len(keys)} códigos de búsqueda."
+                f"Seguimiento sincronizado: {len(keys)} claves cargadas para identificar productos guardados."
             )
             st.rerun()
 
@@ -614,7 +607,7 @@ with tab_compare:
 
     with st.expander("Administrar productos seguidos"):
         if st.button("Cargar o actualizar seguimiento", key="tracking_admin_load"):
-            admin_items, _, admin_error = sync_tracking_session()
+            admin_items, admin_error = fetch_tracking_items_remote(apps_script_url())
             st.session_state.tracking_admin_items = admin_items
             st.session_state.tracking_admin_error = admin_error
         if st.session_state.get("tracking_admin_error"):

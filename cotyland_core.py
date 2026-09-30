@@ -482,24 +482,23 @@ def replace_tracking_remote(url: str, items: list[dict], post=requests.post) -> 
 
 
 def fetch_tracking_remote(url: str, get=requests.get) -> tuple[set[str], str]:
-    """Lee seguimiento de forma acotada; cualquier fallo se convierte en aviso."""
+    """Lee solo el índice persistente de claves de seguimiento."""
     if not url:
         return set(), ""
     try:
-        response = get(url, params={"action": "get_tracking"}, timeout=(4, 8))
+        response = get(url, params={"action": "get_tracking_keys"}, timeout=(4, 8))
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
             return set(), str(payload.get("error", "Respuesta inválida de Apps Script"))
-        keys: set[str] = set()
-        for item in payload.get("items", []):
-            for field in ("Codigo_Barra", "IdArticulo"):
-                value = str(item.get(field, "")).strip().casefold()
-                if value:
-                    keys.add(value)
+        keys = {
+            str(value).strip().casefold()
+            for value in payload.get("keys", [])
+            if str(value).strip()
+        }
         return keys, ""
     except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
-        return set(), f"No se pudo leer ETIQUETAS_SEGUIDAS: {exc}"
+        return set(), f"No se pudo leer el índice de ETIQUETAS_SEGUIDAS: {exc}"
 
 
 def fetch_tracking_items_remote(url: str, get=requests.get) -> tuple[list[dict[str, str]], str]:
