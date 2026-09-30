@@ -55,9 +55,23 @@ def download_products(url: str) -> tuple[pd.DataFrame, str]:
         return pd.DataFrame(), f"No se pudo cargar la base: {exc}"
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def load_tracking(url: str) -> tuple[set[str], str]:
-    return fetch_tracking_remote(url)
+def sync_tracking_session() -> tuple[list[dict[str, str]], set[str], str]:
+    """Sincroniza ETIQUETAS_SEGUIDAS solo cuando el usuario lo pide."""
+    items, error = fetch_tracking_items_remote(apps_script_url())
+    if error:
+        return [], set(), error
+
+    keys = {
+        str(item.get(field, "")).strip().casefold()
+        for item in items
+        for field in ("Codigo_Barra", "IdArticulo")
+        if str(item.get(field, "")).strip()
+    }
+    st.session_state.tracking_keys_session = keys
+    st.session_state.tracking_admin_items = items
+    st.session_state.tracking_load_error_session = ""
+    st.session_state.tracking_checked_session = True
+    return items, keys, ""
 
 
 def install_scanner_key_guard() -> None:
@@ -220,31 +234,28 @@ with tab_scanner:
             f"🟢 Motor activo: {st.session_state.product_count} artículos en memoria rápida."
         )
 
-    # ETIQUETAS_SEGUIDAS también se consulta una sola vez por sesión.
-    # Si Google tarda, el escáner sigue funcionando y se puede reintentar aparte.
-    if not st.session_state.tracking_checked_session:
-        tracked_keys, tracking_load_error = load_tracking(apps_script_url())
-        st.session_state.tracking_keys_session = tracked_keys
-        st.session_state.tracking_load_error_session = tracking_load_error
-        st.session_state.tracking_checked_session = True
-
+    # El escáner nunca consulta Drive por su cuenta. La lista de seguimiento
+    # se usa solo si fue sincronizada manualmente durante esta sesión.
     tracked_keys = st.session_state.tracking_keys_session
     tracking_load_error = st.session_state.tracking_load_error_session
 
     if tracking_load_error:
         st.warning(
-            "No se pudo comprobar qué productos ya estaban guardados en Drive. "
-            "Esto no frena el escaneo: los productos quedarán pendientes hasta guardar el lote. "
+            "La última sincronización de ETIQUETAS_SEGUIDAS falló. "
+            "Esto no frena el escaneo ni el guardado del lote. "
             f"Detalle: {tracking_load_error}"
         )
 
-        if st.button(
-            "🔄 Reintentar lectura de ETIQUETAS_SEGUIDAS",
-            key="retry_tracking_read",
-        ):
-            load_tracking.clear()
-            st.session_state.tracking_checked_session = False
-            st.session_state.tracking_load_error_session = ""
+    if st.button(
+        "🔄 Sincronizar guardados con Drive",
+        key="sync_tracking_scanner",
+    ):
+        _, keys, error = sync_tracking_session()
+        if error:
+            st.session_state.tracking_load_error_session = error
+            st.warning(f"Drive no respondió: {error}")
+        else:
+            st.success(f"Sincronización correcta: {len(keys)} códigos cargados.")
             st.rerun()
 
     def handle_scan() -> None:
@@ -361,7 +372,8 @@ with tab_scanner:
 
                     # No volvemos a consultar Google después del lote.
                     # Actualizamos el estado local inmediatamente.
-                    load_tracking.clear()
+                    st.session_state.tracking_checked_session = True
+                    st.session_state.tracking_load_error_session = ""
                     added = int(payload.get("added", 0) or 0)
                     existing = int(payload.get("existing", 0) or 0)
                     st.success(
@@ -467,6 +479,36 @@ with tab_csv:
 
 with tab_compare:
     st.subheader("📊 Comparar Cambios de Precios")
+
+    sync_col, status_col = st.columns([1, 2])
+    if sync_col.button("🔄 Sincronizar seguimiento", key="sync_tracking_compare"):
+        items, keys, error = sync_tracking_session()
+        if error:
+            st.session_state.tracking_load_error_session = error
+            st.warning(f"No se pudo sincronizar Drive: {error}")
+        else:
+            if "compare_frame" in st.session_state:
+                frame = st.session_state.compare_frame.copy()
+                flags = [
+                    str(row.Codigo_Impresion).strip().casefold() in keys
+                    or str(row.IdArticulo).strip().casefold() in keys
+                    for row in frame.itertuples()
+                ]
+                frame["En seguimiento"] = flags
+                frame["Imprimir"] = flags
+                st.session_state.compare_frame = frame
+                st.session_state.compare_original_followed = set(
+                    frame.loc[frame["En seguimiento"], "_id"]
+                )
+            st.success(
+                f"Seguimiento sincronizado: {len(items)} productos · {len(keys)} códigos de búsqueda."
+            )
+            st.rerun()
+
+    if st.session_state.get("tracking_checked_session", False):
+        status_col.caption("🟢 Seguimiento cargado en memoria. Comparar listas no vuelve a consultar Drive.")
+    else:
+        status_col.caption("⚪ Seguimiento sin sincronizar. Igual podés comparar las listas normalmente.")
     col_a, col_b = st.columns(2)
     file_a = col_a.file_uploader("Subir Archivo de Lista (A)", type=["csv"], key="compare_a")
     file_b = col_b.file_uploader("Subir Archivo de Lista (B)", type=["csv"], key="compare_b")
@@ -475,12 +517,12 @@ with tab_compare:
             changes, stats = compare_price_lists(io.BytesIO(file_a.getvalue()), io.BytesIO(file_b.getvalue()))
             catalog_products, catalog_error = download_products(URL_DRIVE)
             changes = apply_print_codes_from_catalog(changes, catalog_products)
-            tracked_items, tracking_error = fetch_tracking_items_remote(apps_script_url())
-            followed = {
-                str(item.get(field, "")).strip().casefold()
-                for item in tracked_items for field in ("Codigo_Barra", "IdArticulo")
-                if str(item.get(field, "")).strip()
-            }
+            # La comparación no depende de Drive. Si el seguimiento fue
+            # sincronizado manualmente, usamos esa copia local; si no,
+            # simplemente mostramos los cambios sin preselección.
+            tracked_items = st.session_state.get("tracking_admin_items", [])
+            tracking_error = st.session_state.get("tracking_load_error_session", "")
+            followed = set(st.session_state.get("tracking_keys_session", set()))
             changes.insert(0, "_id", range(len(changes)))
             followed_flags = [
                 str(row.Codigo_Impresion).casefold() in followed or str(row.IdArticulo).casefold() in followed
@@ -492,7 +534,11 @@ with tab_compare:
             st.session_state.compare_original_followed = set(changes.loc[changes["En seguimiento"], "_id"])
             st.session_state.tracking_admin_items = tracked_items
             st.session_state.compare_stats = stats
-            st.session_state.compare_tracking_error = " · ".join(message for message in (catalog_error, tracking_error) if message)
+            st.session_state.compare_tracking_error = catalog_error
+            st.session_state.compare_tracking_synced = bool(
+                st.session_state.get("tracking_checked_session", False)
+                and not tracking_error
+            )
             st.session_state.compare_pdf = None
             st.session_state.compare_pdf_url = ""
         except Exception as exc:
@@ -549,7 +595,18 @@ with tab_compare:
             remove_ok, remove_payload, remove_message = mutate_tracking_remote(apps_script_url(), "remove_tracking", remove_items) if remove_items else (True, {"removed": 0}, "")
             if add_ok and remove_ok:
                 st.session_state.compare_original_followed = current_followed
-                load_tracking.clear()
+                followed_keys = set()
+                followed_rows = st.session_state.compare_frame[
+                    st.session_state.compare_frame["En seguimiento"]
+                ]
+                for row in followed_rows.itertuples():
+                    for value in (getattr(row, "Codigo_Impresion", ""), getattr(row, "IdArticulo", "")):
+                        key = str(value or "").strip().casefold()
+                        if key:
+                            followed_keys.add(key)
+                st.session_state.tracking_keys_session = followed_keys
+                st.session_state.tracking_checked_session = True
+                st.session_state.tracking_load_error_session = ""
                 total = remove_payload.get("total", add_payload.get("total", len(current_followed)))
                 st.success(f"Agregados: {add_payload.get('added', 0)} · Eliminados: {remove_payload.get('removed', 0)} · Total: {total}")
             else:
@@ -557,7 +614,7 @@ with tab_compare:
 
     with st.expander("Administrar productos seguidos"):
         if st.button("Cargar o actualizar seguimiento", key="tracking_admin_load"):
-            admin_items, admin_error = fetch_tracking_items_remote(apps_script_url())
+            admin_items, _, admin_error = sync_tracking_session()
             st.session_state.tracking_admin_items = admin_items
             st.session_state.tracking_admin_error = admin_error
         if st.session_state.get("tracking_admin_error"):
